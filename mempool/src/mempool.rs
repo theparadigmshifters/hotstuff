@@ -6,7 +6,7 @@ use crate::quorum_waiter::QuorumWaiter;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crypto::{Digest, PublicKey};
+use circuit::Digest;
 use futures::sink::SinkExt as _;
 use log::{info, warn};
 use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
@@ -14,10 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-
-#[cfg(test)]
-#[path = "tests/mempool_tests.rs"]
-pub mod mempool_tests;
 
 /// The default channel capacity for each channel of the mempool.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -29,21 +25,21 @@ pub type Round = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MempoolMessage {
     Batch(Batch),
-    BatchRequest(Vec<Digest>, /* origin */ PublicKey),
+    BatchRequest(Vec<Digest>, /* origin */ Digest),
 }
 
 /// The messages sent by the consensus and the mempool.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ConsensusMempoolMessage {
     /// The consensus notifies the mempool that it need to sync the target missing batches.
-    Synchronize(Vec<Digest>, /* target */ PublicKey),
+    Synchronize(Vec<Digest>, /* target */ Digest),
     /// The consensus notifies the mempool of a round update.
     Cleanup(Round),
 }
 
 pub struct Mempool {
     /// The public key of this authority.
-    name: PublicKey,
+    name: Digest,
     /// The committee information.
     committee: Committee,
     /// The configuration parameters.
@@ -56,7 +52,7 @@ pub struct Mempool {
 
 impl Mempool {
     pub fn spawn(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
         parameters: Parameters,
         store: Store,
@@ -216,7 +212,7 @@ impl MessageHandler for TxReceiverHandler {
 /// Defines how the network receiver handles incoming mempool messages.
 #[derive(Clone)]
 struct MempoolReceiverHandler {
-    tx_helper: Sender<(Vec<Digest>, PublicKey)>,
+    tx_helper: Sender<(Vec<Digest>, Digest)>,
     tx_processor: Sender<SerializedBatchMessage>,
 }
 

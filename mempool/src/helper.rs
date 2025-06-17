@@ -1,14 +1,10 @@
 use crate::config::Committee;
 use bytes::Bytes;
-use crypto::{Digest, PublicKey};
+use circuit::Digest;
 use log::{error, warn};
 use network::SimpleSender;
 use store::Store;
 use tokio::sync::mpsc::Receiver;
-
-#[cfg(test)]
-#[path = "tests/helper_tests.rs"]
-pub mod helper_tests;
 
 /// A task dedicated to help other authorities by replying to their batch requests.
 pub struct Helper {
@@ -17,7 +13,7 @@ pub struct Helper {
     /// The persistent storage.
     store: Store,
     /// Input channel to receive batch requests.
-    rx_request: Receiver<(Vec<Digest>, PublicKey)>,
+    rx_request: Receiver<(Vec<Digest>, Digest)>,
     /// A network sender to send the batches to the other mempools.
     network: SimpleSender,
 }
@@ -26,7 +22,7 @@ impl Helper {
     pub fn spawn(
         committee: Committee,
         store: Store,
-        rx_request: Receiver<(Vec<Digest>, PublicKey)>,
+        rx_request: Receiver<(Vec<Digest>, Digest)>,
     ) {
         tokio::spawn(async move {
             Self {

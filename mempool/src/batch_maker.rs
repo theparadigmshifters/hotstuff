@@ -1,11 +1,7 @@
 use crate::mempool::MempoolMessage;
 use crate::quorum_waiter::QuorumWaiterMessage;
 use bytes::Bytes;
-#[cfg(feature = "benchmark")]
-use crypto::Digest;
-use crypto::PublicKey;
-#[cfg(feature = "benchmark")]
-use ed25519_dalek::{Digest as _, Sha512};
+use circuit::Digest;
 #[cfg(feature = "benchmark")]
 use log::info;
 use network::ReliableSender;
@@ -14,10 +10,6 @@ use std::convert::TryInto as _;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
-
-#[cfg(test)]
-#[path = "tests/batch_maker_tests.rs"]
-pub mod batch_maker_tests;
 
 pub type Transaction = Vec<u8>;
 pub type Batch = Vec<Transaction>;
@@ -33,7 +25,7 @@ pub struct BatchMaker {
     /// Output channel to deliver sealed batches to the `QuorumWaiter`.
     tx_message: Sender<QuorumWaiterMessage>,
     /// The network addresses of the other mempools.
-    mempool_addresses: Vec<(PublicKey, SocketAddr)>,
+    mempool_addresses: Vec<(Digest, SocketAddr)>,
     /// Holds the current batch.
     current_batch: Batch,
     /// Holds the size of the current batch (in bytes).
@@ -48,7 +40,7 @@ impl BatchMaker {
         max_batch_delay: u64,
         rx_transaction: Receiver<Transaction>,
         tx_message: Sender<QuorumWaiterMessage>,
-        mempool_addresses: Vec<(PublicKey, SocketAddr)>,
+        mempool_addresses: Vec<(Digest, SocketAddr)>,
     ) {
         tokio::spawn(async move {
             Self {
@@ -99,17 +91,18 @@ impl BatchMaker {
 
     /// Seal and broadcast the current batch.
     async fn seal(&mut self) {
-        #[cfg(feature = "benchmark")]
-        let size = self.current_batch_size;
+        //TODO
+        // #[cfg(feature = "benchmark")]
+        // let size = self.current_batch_size;
 
-        // Look for sample txs (they all start with 0) and gather their txs id (the next 8 bytes).
-        #[cfg(feature = "benchmark")]
-        let tx_ids: Vec<_> = self
-            .current_batch
-            .iter()
-            .filter(|tx| tx[0] == 0u8 && tx.len() > 8)
-            .filter_map(|tx| tx[1..9].try_into().ok())
-            .collect();
+        // // Look for sample txs (they all start with 0) and gather their txs id (the next 8 bytes).
+        // #[cfg(feature = "benchmark")]
+        // let tx_ids: Vec<_> = self
+        //     .current_batch
+        //     .iter()
+        //     .filter(|tx| tx[0] == 0u8 && tx.len() > 8)
+        //     .filter_map(|tx| tx[1..9].try_into().ok())
+        //     .collect();
 
         // Serialize the batch.
         self.current_batch_size = 0;
@@ -117,27 +110,28 @@ impl BatchMaker {
         let message = MempoolMessage::Batch(batch);
         let serialized = bincode::serialize(&message).expect("Failed to serialize our own batch");
 
-        #[cfg(feature = "benchmark")]
-        {
-            // NOTE: This is one extra hash that is only needed to print the following log entries.
-            let digest = Digest(
-                Sha512::digest(&serialized).as_slice()[..32]
-                    .try_into()
-                    .unwrap(),
-            );
+        // TODO
+        // #[cfg(feature = "benchmark")]
+        // {
+        //     // NOTE: This is one extra hash that is only needed to print the following log entries.
+        //     let digest = Digest(
+        //         Sha512::digest(&serialized).as_slice()[..32]
+        //             .try_into()
+        //             .unwrap(),
+        //     );
 
-            for id in tx_ids {
-                // NOTE: This log entry is used to compute performance.
-                info!(
-                    "Batch {:?} contains sample tx {}",
-                    digest,
-                    u64::from_be_bytes(id)
-                );
-            }
+        //     for id in tx_ids {
+        //         // NOTE: This log entry is used to compute performance.
+        //         info!(
+        //             "Batch {:?} contains sample tx {}",
+        //             digest,
+        //             u64::from_be_bytes(id)
+        //         );
+        //     }
 
-            // NOTE: This log entry is used to compute performance.
-            info!("Batch {:?} contains {} B", digest, size);
-        }
+        //     // NOTE: This log entry is used to compute performance.
+        //     info!("Batch {:?} contains {} B", digest, size);
+        // }
 
         // Broadcast the batch through the network.
         let (names, addresses): (Vec<_>, _) = self.mempool_addresses.iter().cloned().unzip();

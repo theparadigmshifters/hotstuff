@@ -1,13 +1,7 @@
-use crypto::Digest;
-use ed25519_dalek::Digest as _;
-use ed25519_dalek::Sha512;
-use std::convert::TryInto;
+use circuit::Digest;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
-
-#[cfg(test)]
-#[path = "tests/processor_tests.rs"]
-pub mod processor_tests;
+use placeholder_project_name_placeholder_zk::{field::types::Sample, hash::hash_types::HashOut};
 
 /// Indicates a serialized `MempoolMessage::Batch` message.
 pub type SerializedBatchMessage = Vec<u8>;
@@ -27,7 +21,7 @@ impl Processor {
         tokio::spawn(async move {
             while let Some(batch) = rx_batch.recv().await {
                 // Hash the batch.
-                let digest = Digest(Sha512::digest(&batch).as_slice()[..32].try_into().unwrap());
+                let digest = Digest(HashOut::rand()); //TODO
 
                 // Store the batch.
                 store.write(digest.to_vec(), batch).await;

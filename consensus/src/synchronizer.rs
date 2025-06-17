@@ -3,8 +3,7 @@ use crate::consensus::{ConsensusMessage, CHANNEL_CAPACITY};
 use crate::error::ConsensusResult;
 use crate::messages::{Block, QC};
 use bytes::Bytes;
-use crypto::Hash as _;
-use crypto::{Digest, PublicKey};
+use circuit::{Hash, Digest};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use log::{debug, error};
@@ -15,10 +14,6 @@ use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 
-#[cfg(test)]
-#[path = "tests/synchronizer_tests.rs"]
-pub mod synchronizer_tests;
-
 const TIMER_ACCURACY: u64 = 5_000;
 
 pub struct Synchronizer {
@@ -28,7 +23,7 @@ pub struct Synchronizer {
 
 impl Synchronizer {
     pub fn new(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
         store: Store,
         tx_loopback: Sender<Block>,

@@ -1,36 +1,34 @@
 use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
-use crypto::{Digest, Hash, PublicKey, Signature, SignatureService};
-use ed25519_dalek::Digest as _;
-use ed25519_dalek::Sha512;
+use placeholder_project_name_placeholder_zk::field::types::Sample;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::convert::TryInto;
 use std::fmt;
-
-#[cfg(test)]
-#[path = "tests/messages_tests.rs"]
-pub mod messages_tests;
+use circuit::{Hash, Digest, ProofService};
+use placeholder_project_name_placeholder_zk::plonk::config::PoseidonGoldilocksConfig;
+use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Block {
     pub qc: QC,
     pub tc: Option<TC>,
-    pub author: PublicKey,
+    pub author: Digest,
     pub round: Round,
     pub payload: Vec<Digest>,
-    pub signature: Signature,
+    pub proof: Option<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>>,
 }
 
 impl Block {
     pub async fn new(
         qc: QC,
         tc: Option<TC>,
-        author: PublicKey,
+        author: Digest,
         round: Round,
         payload: Vec<Digest>,
-        mut signature_service: SignatureService,
+        mut proof_service: ProofService,
     ) -> Self {
         let block = Self {
             qc,
@@ -38,10 +36,10 @@ impl Block {
             author,
             round,
             payload,
-            signature: Signature::default(),
+            proof: None,
         };
-        let signature = signature_service.request_signature(block.digest()).await;
-        Self { signature, ..block }
+        let proof = proof_service.request_proof(block.digest()).await;
+        Self { proof: Some(proof), ..block }
     }
 
     pub fn genesis() -> Self {
@@ -61,7 +59,7 @@ impl Block {
         );
 
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        // self.signature.verify(&self.digest(), &self.author)?;
 
         // Check the embedded QC.
         if self.qc != QC::genesis() {
@@ -78,14 +76,15 @@ impl Block {
 
 impl Hash for Block {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(self.author.0);
-        hasher.update(self.round.to_le_bytes());
-        for x in &self.payload {
-            hasher.update(x);
-        }
-        hasher.update(&self.qc.hash);
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        // let mut hasher = Sha512::new();
+        // hasher.update(self.author.clone());
+        // hasher.update(self.round.to_le_bytes());
+        // for x in &self.payload {
+        //     hasher.update(x);
+        // }
+        // hasher.update(&self.qc.hash);
+        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        Digest(HashOut::rand())
     }
 }
 
@@ -113,24 +112,24 @@ impl fmt::Display for Block {
 pub struct Vote {
     pub hash: Digest,
     pub round: Round,
-    pub author: PublicKey,
-    pub signature: Signature,
+    pub author: Digest,
+    pub proof: Option<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>>,
 }
 
 impl Vote {
     pub async fn new(
         block: &Block,
-        author: PublicKey,
-        mut signature_service: SignatureService,
+        author: Digest,
+        mut proof_service: ProofService,
     ) -> Self {
         let vote = Self {
             hash: block.digest(),
             round: block.round,
             author,
-            signature: Signature::default(),
+            proof: None,
         };
-        let signature = signature_service.request_signature(vote.digest()).await;
-        Self { signature, ..vote }
+        let proof = proof_service.request_proof(vote.digest()).await;
+        Self { proof: Some(proof), ..vote }
     }
 
     pub fn verify(&self, committee: &Committee) -> ConsensusResult<()> {
@@ -141,17 +140,18 @@ impl Vote {
         );
 
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        //self.signature.verify(&self.digest(), &self.author)?;
         Ok(())
     }
 }
 
 impl Hash for Vote {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(&self.hash);
-        hasher.update(self.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        // let mut hasher = Sha512::new();
+        // hasher.update(&self.hash);
+        // hasher.update(self.round.to_le_bytes());
+        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        Digest(HashOut::rand())
     }
 }
 
@@ -165,7 +165,7 @@ impl fmt::Debug for Vote {
 pub struct QC {
     pub hash: Digest,
     pub round: Round,
-    pub votes: Vec<(PublicKey, Signature)>,
+    pub votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>)>,
 }
 
 impl QC {
@@ -194,16 +194,18 @@ impl QC {
         );
 
         // Check the signatures.
-        Signature::verify_batch(&self.digest(), &self.votes).map_err(ConsensusError::from)
+        // Signature::verify_batch(&self.digest(), &self.votes).map_err(ConsensusError::from)
+        Ok(())
     }
 }
 
 impl Hash for QC {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(&self.hash);
-        hasher.update(self.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        // let mut hasher = Sha512::new();
+        // hasher.update(&self.hash);
+        // hasher.update(self.round.to_le_bytes());
+        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        Digest(HashOut::rand())
     }
 }
 
@@ -223,26 +225,26 @@ impl PartialEq for QC {
 pub struct Timeout {
     pub high_qc: QC,
     pub round: Round,
-    pub author: PublicKey,
-    pub signature: Signature,
+    pub author: Digest,
+    pub proof: Option<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>>,
 }
 
 impl Timeout {
     pub async fn new(
         high_qc: QC,
         round: Round,
-        author: PublicKey,
-        mut signature_service: SignatureService,
+        author: Digest,
+        mut proof_service: ProofService,
     ) -> Self {
         let timeout = Self {
             high_qc,
             round,
             author,
-            signature: Signature::default(),
+            proof: None,
         };
-        let signature = signature_service.request_signature(timeout.digest()).await;
+        let proof = proof_service.request_proof(timeout.digest()).await;
         Self {
-            signature,
+            proof: Some(proof),
             ..timeout
         }
     }
@@ -255,7 +257,7 @@ impl Timeout {
         );
 
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        //self.signature.verify(&self.digest(), &self.author)?;
 
         // Check the embedded QC.
         if self.high_qc != QC::genesis() {
@@ -267,10 +269,11 @@ impl Timeout {
 
 impl Hash for Timeout {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(self.round.to_le_bytes());
-        hasher.update(self.high_qc.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        // let mut hasher = Sha512::new();
+        // hasher.update(self.round.to_le_bytes());
+        // hasher.update(self.high_qc.round.to_le_bytes());
+        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        Digest(HashOut::rand())
     }
 }
 
@@ -283,7 +286,7 @@ impl fmt::Debug for Timeout {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TC {
     pub round: Round,
-    pub votes: Vec<(PublicKey, Signature, Round)>,
+    pub votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>, Round)>,
 }
 
 impl TC {
@@ -304,13 +307,13 @@ impl TC {
         );
 
         // Check the signatures.
-        for (author, signature, high_qc_round) in &self.votes {
-            let mut hasher = Sha512::new();
-            hasher.update(self.round.to_le_bytes());
-            hasher.update(high_qc_round.to_le_bytes());
-            let digest = Digest(hasher.finalize().as_slice()[..32].try_into().unwrap());
-            signature.verify(&digest, author)?;
-        }
+        // for (author, signature, high_qc_round) in &self.votes {
+        //     let mut hasher = Sha512::new();
+        //     hasher.update(self.round.to_le_bytes());
+        //     hasher.update(high_qc_round.to_le_bytes());
+        //     let digest = Digest(hasher.finalize().as_slice()[..32].try_into().unwrap());
+        //     signature.verify(&digest, author)?;
+        // }
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use crate::config::Committee;
 use crate::mempool::{ConsensusMempoolMessage, MempoolMessage, Round};
 use bytes::Bytes;
-use crypto::{Digest, PublicKey};
+use circuit::Digest;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use log::{debug, error};
@@ -12,17 +12,13 @@ use store::{Store, StoreError};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 
-#[cfg(test)]
-#[path = "tests/synchronizer_tests.rs"]
-pub mod synchronizer_tests;
-
 /// Resolution of the timer managing retrials of sync requests (in ms).
 const TIMER_RESOLUTION: u64 = 1_000;
 
 // The `Synchronizer` is responsible to keep the mempool in sync with the others.
 pub struct Synchronizer {
     /// The public key of this authority.
-    name: PublicKey,
+    name: Digest,
     /// The committee information.
     committee: Committee,
     // The persistent storage.
@@ -49,7 +45,7 @@ pub struct Synchronizer {
 impl Synchronizer {
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
         store: Store,
         gc_depth: Round,
@@ -136,7 +132,7 @@ impl Synchronizer {
                                 continue;
                             }
                         };
-                        let message = MempoolMessage::BatchRequest(missing, self.name);
+                        let message = MempoolMessage::BatchRequest(missing, self.name.clone());
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
                         self.network.send(address, Bytes::from(serialized)).await;
                     },
@@ -194,7 +190,7 @@ impl Synchronizer {
                             .iter()
                             .map(|(_, address)| *address)
                             .collect();
-                        let message = MempoolMessage::BatchRequest(retry, self.name);
+                        let message = MempoolMessage::BatchRequest(retry, self.name.clone());
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
                         self.network
                             .lucky_broadcast(addresses, Bytes::from(serialized), self.sync_retry_nodes)

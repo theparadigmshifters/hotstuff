@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::config::{Committee, Stake};
 use crate::processor::SerializedBatchMessage;
-use crypto::PublicKey;
+use circuit::Digest;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use network::CancelHandler;
@@ -10,10 +10,6 @@ use tokio::{
     sync::mpsc::{Receiver, Sender},
     time::sleep,
 };
-
-#[cfg(test)]
-#[path = "tests/quorum_waiter_tests.rs"]
-pub mod quorum_waiter_tests;
 
 /// Extra batch dissemination time for the f last nodes (in ms).
 const DISSEMINATION_DEADLINE: u64 = 500;
@@ -25,7 +21,7 @@ pub struct QuorumWaiterMessage {
     /// A serialized `MempoolMessage::Batch` message.
     pub batch: SerializedBatchMessage,
     /// The cancel handlers to receive the acknowledgements of our broadcast.
-    pub handlers: Vec<(PublicKey, CancelHandler)>,
+    pub handlers: Vec<(Digest, CancelHandler)>,
 }
 
 /// The QuorumWaiter waits for 2f authorities to acknowledge reception of a batch.

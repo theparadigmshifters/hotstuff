@@ -2,12 +2,12 @@ use crate::config::{Committee, Stake};
 use crate::consensus::{ConsensusMessage, Round};
 use crate::messages::{Block, QC, TC};
 use bytes::Bytes;
-use crypto::{Digest, PublicKey, SignatureService};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use log::{debug, info};
 use network::{CancelHandler, ReliableSender};
 use std::collections::HashSet;
+use circuit::{Digest, ProofService};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(Debug)]
@@ -17,9 +17,9 @@ pub enum ProposerMessage {
 }
 
 pub struct Proposer {
-    name: PublicKey,
+    name: Digest,
     committee: Committee,
-    signature_service: SignatureService,
+    signature_service: ProofService,
     rx_mempool: Receiver<Digest>,
     rx_message: Receiver<ProposerMessage>,
     tx_loopback: Sender<Block>,
@@ -29,9 +29,9 @@ pub struct Proposer {
 
 impl Proposer {
     pub fn spawn(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
-        signature_service: SignatureService,
+        signature_service: ProofService,
         rx_mempool: Receiver<Digest>,
         rx_message: Receiver<ProposerMessage>,
         tx_loopback: Sender<Block>,
@@ -63,7 +63,7 @@ impl Proposer {
         let block = Block::new(
             qc,
             tc,
-            self.name,
+            self.name.clone(),
             round,
             /* payload */ self.buffer.drain().collect(),
             self.signature_service.clone(),

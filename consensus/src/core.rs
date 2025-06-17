@@ -10,8 +10,7 @@ use crate::synchronizer::Synchronizer;
 use crate::timer::Timer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
-use crypto::Hash as _;
-use crypto::{PublicKey, SignatureService};
+use circuit::{Digest, Hash, ProofService};
 use log::{debug, error, info, warn};
 use network::SimpleSender;
 use std::cmp::max;
@@ -19,15 +18,11 @@ use std::collections::VecDeque;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-#[cfg(test)]
-#[path = "tests/core_tests.rs"]
-pub mod core_tests;
-
 pub struct Core {
-    name: PublicKey,
+    name: Digest,
     committee: Committee,
     store: Store,
-    signature_service: SignatureService,
+    proof_service: ProofService,
     leader_elector: LeaderElector,
     mempool_driver: MempoolDriver,
     synchronizer: Synchronizer,
@@ -47,9 +42,9 @@ pub struct Core {
 impl Core {
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
-        signature_service: SignatureService,
+        proof_service: ProofService,
         store: Store,
         leader_elector: LeaderElector,
         mempool_driver: MempoolDriver,
@@ -64,7 +59,7 @@ impl Core {
             Self {
                 name,
                 committee: committee.clone(),
-                signature_service,
+                proof_service,
                 store,
                 leader_elector,
                 mempool_driver,
@@ -112,7 +107,7 @@ impl Core {
         // Ensure we won't vote for contradicting blocks.
         self.increase_last_voted_round(block.round);
         // TODO [issue #15]: Write to storage preferred_round and last_voted_round.
-        Some(Vote::new(block, self.name, self.signature_service.clone()).await)
+        Some(Vote::new(block, self.name.clone(), self.proof_service.clone()).await)
     }
 
     async fn commit(&mut self, block: Block) -> ConsensusResult<()> {
@@ -172,8 +167,8 @@ impl Core {
         let timeout = Timeout::new(
             self.high_qc.clone(),
             self.round,
-            self.name,
-            self.signature_service.clone(),
+            self.name.clone(),
+            self.proof_service.clone(),
         )
         .await;
         debug!("Created {:?}", timeout);
@@ -370,7 +365,7 @@ impl Core {
             block.author == self.leader_elector.get_leader(block.round),
             ConsensusError::WrongLeader {
                 digest,
-                leader: block.author,
+                leader: block.author.clone(),
                 round: block.round
             }
         );

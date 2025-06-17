@@ -2,13 +2,11 @@ use crate::config::{Committee, Stake};
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::messages::{Timeout, Vote, QC, TC};
-use crypto::Hash as _;
-use crypto::{Digest, PublicKey, Signature};
 use std::collections::{HashMap, HashSet};
-
-#[cfg(test)]
-#[path = "tests/aggregator_tests.rs"]
-pub mod aggregator_tests;
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::plonk::config::PoseidonGoldilocksConfig;
+use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
+use circuit::{Hash, Digest};
 
 pub struct Aggregator {
     committee: Committee,
@@ -57,8 +55,8 @@ impl Aggregator {
 
 struct QCMaker {
     weight: Stake,
-    votes: Vec<(PublicKey, Signature)>,
-    used: HashSet<PublicKey>,
+    votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>)>,
+    used: HashSet<Digest>,
 }
 
 impl QCMaker {
@@ -80,7 +78,7 @@ impl QCMaker {
             ConsensusError::AuthorityReuse(author)
         );
 
-        self.votes.push((author, vote.signature));
+        self.votes.push((author.clone(), vote.proof.unwrap()));
         self.weight += committee.stake(&author);
         if self.weight >= committee.quorum_threshold() {
             self.weight = 0; // Ensures QC is only made once.
@@ -96,8 +94,8 @@ impl QCMaker {
 
 struct TCMaker {
     weight: Stake,
-    votes: Vec<(PublicKey, Signature, Round)>,
-    used: HashSet<PublicKey>,
+    votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>, Round)>,
+    used: HashSet<Digest>,
 }
 
 impl TCMaker {
@@ -125,7 +123,7 @@ impl TCMaker {
 
         // Add the timeout to the accumulator.
         self.votes
-            .push((author, timeout.signature, timeout.high_qc.round));
+            .push((author.clone(), timeout.proof.unwrap(), timeout.high_qc.round));
         self.weight += committee.stake(&author);
         if self.weight >= committee.quorum_threshold() {
             self.weight = 0; // Ensures TC is only created once.

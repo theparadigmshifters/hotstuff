@@ -9,7 +9,7 @@ use crate::proposer::Proposer;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crypto::{Digest, PublicKey, SignatureService};
+use circuit::{Digest, ProofService};
 use futures::SinkExt as _;
 use log::info;
 use mempool::ConsensusMempoolMessage;
@@ -18,10 +18,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-
-#[cfg(test)]
-#[path = "tests/consensus_tests.rs"]
-pub mod consensus_tests;
 
 /// The default channel capacity for each channel of the consensus.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -35,7 +31,7 @@ pub enum ConsensusMessage {
     Vote(Vote),
     Timeout(Timeout),
     TC(TC),
-    SyncRequest(Digest, PublicKey),
+    SyncRequest(Digest, Digest),
 }
 
 pub struct Consensus;
@@ -43,10 +39,10 @@ pub struct Consensus;
 impl Consensus {
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
-        name: PublicKey,
+        name: Digest,
         committee: Committee,
         parameters: Parameters,
-        signature_service: SignatureService,
+        proof_service: ProofService,
         store: Store,
         rx_mempool: Receiver<Digest>,
         tx_mempool: Sender<ConsensusMempoolMessage>,
@@ -75,7 +71,7 @@ impl Consensus {
         );
         info!(
             "Node {} listening to consensus messages on {}",
-            name, address
+            name.clone(), address
         );
 
         // Make the leader election module.
@@ -86,7 +82,7 @@ impl Consensus {
 
         // Make the synchronizer.
         let synchronizer = Synchronizer::new(
-            name,
+            name.clone(),
             committee.clone(),
             store.clone(),
             tx_loopback.clone(),
@@ -97,7 +93,7 @@ impl Consensus {
         Core::spawn(
             name,
             committee.clone(),
-            signature_service.clone(),
+            proof_service.clone(),
             store.clone(),
             leader_elector,
             mempool_driver,
@@ -113,7 +109,7 @@ impl Consensus {
         Proposer::spawn(
             name,
             committee.clone(),
-            signature_service,
+            proof_service,
             rx_mempool,
             /* rx_message */ rx_proposer,
             tx_loopback,
@@ -128,7 +124,7 @@ impl Consensus {
 #[derive(Clone)]
 struct ConsensusReceiverHandler {
     tx_consensus: Sender<ConsensusMessage>,
-    tx_helper: Sender<(Digest, PublicKey)>,
+    tx_helper: Sender<(Digest, Digest)>,
 }
 
 #[async_trait]

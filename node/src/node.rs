@@ -1,11 +1,14 @@
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use placeholder_project_name_placeholder_zk::plonk::config::GenericHashOut;
 use crate::config::Export as _;
-use crate::config::{Committee, ConfigError, Parameters, Secret};
+use crate::config::{Committee, ConfigError, Parameters, PreImage};
 use consensus::{Block, Consensus};
-use crypto::SignatureService;
 use log::info;
 use mempool::Mempool;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
+use base64::{Engine as _, engine::general_purpose};
+use circuit::{Digest, ProofService, SecretCircuit};
 
 /// The default channel capacity for this module.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -27,9 +30,14 @@ impl Node {
 
         // Read the committee and secret key from file.
         let committee = Committee::read(committee_file)?;
-        let secret = Secret::read(key_file)?;
-        let name = secret.name;
-        let secret_key = secret.secret;
+        let pre_image = PreImage::read(key_file)?;
+        let secret_encoded = pre_image.secret;
+        let secret = HashOut::from_bytes(&general_purpose::STANDARD.decode(secret_encoded).unwrap());
+        let name_encoded = pre_image.name;
+        let name = Digest(HashOut::from_bytes(&general_purpose::STANDARD.decode(name_encoded).unwrap()));
+
+        // build circuit
+        let secret_circuit = SecretCircuit::new(secret);
 
         // Load default parameters if none are specified.
         let parameters = match parameters {
@@ -40,8 +48,8 @@ impl Node {
         // Make the data store.
         let store = Store::new(store_path).expect("Failed to create store");
 
-        // Run the signature service.
-        let signature_service = SignatureService::new(secret_key);
+        // Run the proof service.
+        let proof_service = ProofService::new(secret_circuit);
 
         // Make a new mempool.
         Mempool::spawn(
@@ -58,7 +66,7 @@ impl Node {
             name,
             committee.consensus,
             parameters.consensus,
-            signature_service,
+            proof_service,
             store,
             rx_mempool_to_consensus,
             tx_consensus_to_mempool,
@@ -70,7 +78,7 @@ impl Node {
     }
 
     pub fn print_key_file(filename: &str) -> Result<(), ConfigError> {
-        Secret::new().write(filename)
+        PreImage::new().write(filename)
     }
 
     pub async fn analyze_block(&mut self) {

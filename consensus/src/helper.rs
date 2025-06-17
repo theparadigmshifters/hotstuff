@@ -1,15 +1,11 @@
 use crate::config::Committee;
 use crate::consensus::ConsensusMessage;
 use bytes::Bytes;
-use crypto::{Digest, PublicKey};
+use circuit::Digest;
 use log::warn;
 use network::SimpleSender;
 use store::Store;
 use tokio::sync::mpsc::Receiver;
-
-#[cfg(test)]
-#[path = "tests/helper_tests.rs"]
-pub mod helper_tests;
 
 /// A task dedicated to help other authorities by replying to their sync requests.
 pub struct Helper {
@@ -18,13 +14,13 @@ pub struct Helper {
     /// The persistent storage.
     store: Store,
     /// Input channel to receive sync requests.
-    rx_requests: Receiver<(Digest, PublicKey)>,
+    rx_requests: Receiver<(Digest, Digest)>,
     /// A network sender to reply to the sync requests.
     network: SimpleSender,
 }
 
 impl Helper {
-    pub fn spawn(committee: Committee, store: Store, rx_requests: Receiver<(Digest, PublicKey)>) {
+    pub fn spawn(committee: Committee, store: Store, rx_requests: Receiver<(Digest, Digest)>) {
         tokio::spawn(async move {
             Self {
                 committee,

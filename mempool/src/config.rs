@@ -1,4 +1,4 @@
-use crypto::PublicKey;
+use circuit::Digest;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -59,12 +59,12 @@ pub struct Authority {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Committee {
-    pub authorities: HashMap<PublicKey, Authority>,
+    pub authorities: HashMap<Digest, Authority>,
     pub epoch: EpochNumber,
 }
 
 impl Committee {
-    pub fn new(info: Vec<(PublicKey, Stake, SocketAddr, SocketAddr)>, epoch: EpochNumber) -> Self {
+    pub fn new(info: Vec<(Digest, Stake, SocketAddr, SocketAddr)>, epoch: EpochNumber) -> Self {
         Self {
             authorities: info
                 .into_iter()
@@ -82,7 +82,7 @@ impl Committee {
     }
 
     /// Return the stake of a specific authority.
-    pub fn stake(&self, name: &PublicKey) -> Stake {
+    pub fn stake(&self, name: &Digest) -> Stake {
         self.authorities.get(name).map_or_else(|| 0, |x| x.stake)
     }
 
@@ -95,21 +95,21 @@ impl Committee {
     }
 
     /// Returns the address to receive client transactions.
-    pub fn transactions_address(&self, name: &PublicKey) -> Option<SocketAddr> {
+    pub fn transactions_address(&self, name: &Digest) -> Option<SocketAddr> {
         self.authorities.get(name).map(|x| x.transactions_address)
     }
 
     /// Returns the mempool addresses of a specific node.
-    pub fn mempool_address(&self, name: &PublicKey) -> Option<SocketAddr> {
+    pub fn mempool_address(&self, name: &Digest) -> Option<SocketAddr> {
         self.authorities.get(name).map(|x| x.mempool_address)
     }
 
     /// Returns the mempool addresses of all nodes except `myself`.
-    pub fn broadcast_addresses(&self, myself: &PublicKey) -> Vec<(PublicKey, SocketAddr)> {
+    pub fn broadcast_addresses(&self, myself: &Digest) -> Vec<(Digest, SocketAddr)> {
         self.authorities
             .iter()
             .filter(|(name, _)| name != &myself)
-            .map(|(name, x)| (*name, x.mempool_address))
+            .map(|(name, x)| (name.clone(), x.mempool_address))
             .collect()
     }
 }
