@@ -132,7 +132,7 @@ impl Synchronizer {
                                 continue;
                             }
                         };
-                        let message = MempoolMessage::BatchRequest(missing, self.name.clone());
+                        let message = MempoolMessage::TransactionRequest(missing, self.name.clone());
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
                         self.network.send(address, Bytes::from(serialized)).await;
                     },
@@ -190,7 +190,7 @@ impl Synchronizer {
                             .iter()
                             .map(|(_, address)| *address)
                             .collect();
-                        let message = MempoolMessage::BatchRequest(retry, self.name.clone());
+                        let message = MempoolMessage::TransactionRequest(retry, self.name.clone());
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
                         self.network
                             .lucky_broadcast(addresses, Bytes::from(serialized), self.sync_retry_nodes)

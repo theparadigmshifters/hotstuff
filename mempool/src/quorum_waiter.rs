@@ -1,7 +1,6 @@
 use std::time::Duration;
-
 use crate::config::{Committee, Stake};
-use crate::processor::SerializedBatchMessage;
+use crate::transaction::Transaction;
 use circuit::Digest;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
@@ -19,7 +18,7 @@ const DISSEMINATION_QUEUE_MAX: usize = 10_000;
 #[derive(Debug)]
 pub struct QuorumWaiterMessage {
     /// A serialized `MempoolMessage::Batch` message.
-    pub batch: SerializedBatchMessage,
+    pub transaction: Transaction,
     /// The cancel handlers to receive the acknowledgements of our broadcast.
     pub handlers: Vec<(Digest, CancelHandler)>,
 }
@@ -32,8 +31,8 @@ pub struct QuorumWaiter {
     stake: Stake,
     /// Input Channel to receive commands.
     rx_message: Receiver<QuorumWaiterMessage>,
-    /// Channel to deliver batches for which we have enough acknowledgements.
-    tx_batch: Sender<SerializedBatchMessage>,
+    /// Channel to deliver transaction for which we have enough acknowledgements.
+    tx_transaction: Sender<Transaction>,
 }
 
 impl QuorumWaiter {
@@ -42,14 +41,14 @@ impl QuorumWaiter {
         committee: Committee,
         stake: Stake,
         rx_message: Receiver<QuorumWaiterMessage>,
-        tx_batch: Sender<Vec<u8>>,
+        tx_transaction: Sender<Transaction>,
     ) {
         tokio::spawn(async move {
             Self {
                 committee,
                 stake,
                 rx_message,
-                tx_batch,
+                tx_transaction,
             }
             .run()
             .await;
@@ -70,10 +69,10 @@ impl QuorumWaiter {
         let mut pending = FuturesUnordered::new();
         let mut pending_counter = 0;
 
-        // while let Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv().await {
+        // while let Some(QuorumWaiterMessage { transaction, handlers }) = self.rx_message.recv().await {
         loop {
             tokio::select! {
-                Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv() => {
+                Some(QuorumWaiterMessage { transaction, handlers }) = self.rx_message.recv() => {
                     let mut wait_for_quorum: FuturesUnordered<_> = handlers
                         .into_iter()
                         .map(|(name, handler)| {
@@ -89,8 +88,8 @@ impl QuorumWaiter {
                     while let Some(stake) = wait_for_quorum.next().await {
                         total_stake += stake;
                         if total_stake >= self.committee.quorum_threshold() {
-                            self.tx_batch
-                                .send(batch)
+                            self.tx_transaction
+                                .send(transaction)
                                 .await
                                 .expect("Failed to deliver batch");
                             break;
