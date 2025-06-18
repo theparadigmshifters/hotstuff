@@ -1,5 +1,3 @@
-use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
-use placeholder_project_name_placeholder_zk::plonk::config::GenericHashOut;
 use crate::config::Export as _;
 use crate::config::{Committee, ConfigError, Parameters, PreImage};
 use consensus::{Block, Consensus};
@@ -7,8 +5,7 @@ use log::info;
 use mempool::Mempool;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
-use base64::{Engine as _, engine::general_purpose};
-use circuit::{Digest, ProofService, SecretCircuit};
+use circuit::{ProofService, SecretCircuit};
 
 /// The default channel capacity for this module.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -32,12 +29,12 @@ impl Node {
         let committee = Committee::read(committee_file)?;
         let pre_image = PreImage::read(key_file)?;
         let secret_encoded = pre_image.secret;
-        let secret = HashOut::from_bytes(&general_purpose::STANDARD.decode(secret_encoded).unwrap());
+        //let secret = HashOut::from_bytes(&general_purpose::STANDARD.decode(secret_encoded).unwrap());
         let name_encoded = pre_image.name;
-        let name = Digest(HashOut::from_bytes(&general_purpose::STANDARD.decode(name_encoded).unwrap()));
+        //let name = Digest(HashOut::from_bytes(&general_purpose::STANDARD.decode(name_encoded).unwrap()));
 
         // build circuit
-        let secret_circuit = SecretCircuit::new(secret);
+        let secret_circuit = SecretCircuit::new(secret_encoded.0);
 
         // Load default parameters if none are specified.
         let parameters = match parameters {
@@ -53,7 +50,7 @@ impl Node {
 
         // Make a new mempool.
         Mempool::spawn(
-            name,
+            name_encoded,
             committee.mempool,
             parameters.mempool,
             store.clone(),
@@ -63,7 +60,7 @@ impl Node {
 
         // Run the consensus core.
         Consensus::spawn(
-            name,
+            name_encoded,
             committee.consensus,
             parameters.consensus,
             proof_service,
@@ -73,7 +70,7 @@ impl Node {
             tx_commit,
         );
 
-        info!("Node {} successfully booted", name);
+        info!("Node {} successfully booted", name_encoded);
         Ok(Self { commit: rx_commit })
     }
 

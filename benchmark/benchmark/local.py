@@ -67,7 +67,8 @@ class LocalBench:
                 keys += [Key.from_file(filename)]
 
             names = [x.name for x in keys]
-            committee = LocalCommittee(names, self.BASE_PORT)
+            vks = [x.vk for x in keys]
+            committee = LocalCommittee(names, vks, self.BASE_PORT)
             committee.print(PathMaker.committee_file())
 
             self.node_parameters.print(PathMaker.parameters_file())

@@ -2,7 +2,6 @@ use consensus::{Committee as ConsensusCommittee, Parameters as ConsensusParamete
 use crypto::{generate_keypair, generate_production_keypair, PublicKey, SecretKey};
 use mempool::{Committee as MempoolCommittee, Parameters as MempoolParameters};
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
-use placeholder_project_name_placeholder_zk::plonk::config::GenericHashOut;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::field::types::Sample;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
@@ -16,7 +15,7 @@ use std::io::Write as _;
 use thiserror::Error;
 use std::convert::TryInto;
 use base64::{Engine as _, engine::general_purpose};
-use circuit::SecretCircuit;
+use circuit::{Digest, SecretCircuit};
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -88,9 +87,9 @@ impl Default for Secret {
 
 #[derive(Serialize, Deserialize)]
 pub struct PreImage {
-    pub name: String,
+    pub name: Digest,
     pub vk: String,
-    pub secret: String,
+    pub secret: Digest,
 }
 
 impl PreImage {
@@ -101,10 +100,8 @@ impl PreImage {
         let vk_encoded = general_purpose::STANDARD.encode(&vk.to_bytes().unwrap());
         let vk_h: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = vk.try_into().unwrap();
         let name = HashOut::from(vk_h);
-        let name_encoded = general_purpose::STANDARD.encode(&name.to_bytes());
-        let secret_encoded = general_purpose::STANDARD.encode(&secret.to_bytes());
   
-        Self { name: name_encoded, vk: vk_encoded, secret: secret_encoded }
+        Self { name: Digest(name), vk: vk_encoded, secret: Digest(secret) }
     }
 }
 

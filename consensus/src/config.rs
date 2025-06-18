@@ -33,6 +33,7 @@ impl Parameters {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Authority {
     pub stake: Stake,
+    pub vk: String,
     pub address: SocketAddr,
 }
 
@@ -43,12 +44,12 @@ pub struct Committee {
 }
 
 impl Committee {
-    pub fn new(info: Vec<(Digest, Stake, SocketAddr)>, epoch: EpochNumber) -> Self {
+    pub fn new(info: Vec<(Digest, String, Stake, SocketAddr)>, epoch: EpochNumber) -> Self {
         Self {
             authorities: info
                 .into_iter()
-                .map(|(name, stake, address)| {
-                    let authority = Authority { stake, address };
+                .map(|(name, vk, stake, address)| {
+                    let authority = Authority { stake, vk, address };
                     (name, authority)
                 })
                 .collect(),

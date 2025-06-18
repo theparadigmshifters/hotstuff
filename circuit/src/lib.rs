@@ -12,7 +12,7 @@ use base64::{Engine as _, engine::general_purpose};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use std::fmt;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use std::cmp::Ordering;
 
 const D: usize = 2;
@@ -94,7 +94,7 @@ impl ProofService {
 }
 
 /// Represents a hash digest (32 bytes).
-#[derive(Copy, Hash, PartialEq, Default, Eq, Clone, Deserialize, Serialize)]
+#[derive(Copy, Hash, PartialEq, Default, Eq, Clone)]
 pub struct Digest(pub HashOut<GoldilocksField>);
 
 impl Digest {
@@ -128,6 +128,27 @@ impl PartialOrd for Digest {
 impl Ord for Digest {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.to_bytes().cmp(&other.0.to_bytes())
+    }
+}
+
+impl Serialize for Digest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let base64_str = general_purpose::STANDARD.encode(&self.0.to_bytes());
+        serializer.serialize_str(&base64_str)
+    }
+}
+
+impl<'de> Deserialize<'de> for Digest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let base64_str = String::deserialize(deserializer)?;
+        let bytes = general_purpose::STANDARD.decode(&base64_str).unwrap();
+        Ok(Digest(HashOut::from_bytes(&bytes)))
     }
 }
 
