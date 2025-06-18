@@ -63,22 +63,16 @@ impl PayloadBroadcaster {
         let message = MempoolMessage::Transaction(transaction.clone());
         let serialized = bincode::serialize(&message).expect("Failed to serialize our own transaction");
 
-        // #[cfg(feature = "benchmark")]
-        // {
-        //     // NOTE: This is one extra hash that is only needed to print the following log entries.
-        //     let digest = Digest(
-        //         Sha512::digest(&serialized).as_slice()[..32]
-        //             .try_into()
-        //             .unwrap(),
-        //     );
-        //     let id: [u8; 8] = transaction[0..8].try_into().unwrap();
-        //     // NOTE: This log entry is used to compute performance.
-        //     info!(
-        //         "Hash {:?} contains transaction {}",
-        //         digest,
-        //         u64::from_be_bytes(id)
-        //     );
-        // }
+        #[cfg(feature = "benchmark")]
+        {
+            // NOTE: This is one extra hash that is only needed to print the following log entries.
+            let digest = transaction.hash();
+            // NOTE: This log entry is used to compute performance.
+            info!(
+                "receive transaction Hash {:?}",
+                digest
+            );
+        }
 
         // Broadcast the transaction through the network.
         let (names, addresses): (Vec<_>, _) = self.mempool_addresses.iter().cloned().unzip();

@@ -1,13 +1,12 @@
 use crate::config::Committee;
-use crate::consensus::Round;
+use crate::consensus::{Round, ToField};
 use crate::error::{ConsensusError, ConsensusResult};
-use placeholder_project_name_placeholder_zk::field::types::Sample;
-use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 use circuit::{Hash, Digest, ProofService};
-use placeholder_project_name_placeholder_zk::plonk::config::PoseidonGoldilocksConfig;
+use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
 use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 
@@ -76,15 +75,12 @@ impl Block {
 
 impl Hash for Block {
     fn digest(&self) -> Digest {
-        // let mut hasher = Sha512::new();
-        // hasher.update(self.author.clone());
-        // hasher.update(self.round.to_le_bytes());
-        // for x in &self.payload {
-        //     hasher.update(x);
-        // }
-        // hasher.update(&self.qc.hash);
-        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
-        Digest(HashOut::rand())
+        let mut elements = Vec::new();
+        elements.extend_from_slice(&self.author.to_vec_field());
+        elements.push(self.round.to_field());
+        elements.extend_from_slice(&self.payload.iter().flat_map(|d| d.to_vec_field()).collect::<Vec<GoldilocksField>>());
+        elements.extend_from_slice(&self.qc.hash.to_vec_field());
+        Digest(PoseidonHash::hash_pad(&elements))
     }
 }
 
@@ -147,11 +143,10 @@ impl Vote {
 
 impl Hash for Vote {
     fn digest(&self) -> Digest {
-        // let mut hasher = Sha512::new();
-        // hasher.update(&self.hash);
-        // hasher.update(self.round.to_le_bytes());
-        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
-        Digest(HashOut::rand())
+        let mut elements = Vec::new();
+        elements.extend_from_slice(&self.hash.to_vec_field());
+        elements.push(self.round.to_field());
+        Digest(PoseidonHash::hash_pad(&elements))
     }
 }
 
@@ -201,11 +196,10 @@ impl QC {
 
 impl Hash for QC {
     fn digest(&self) -> Digest {
-        // let mut hasher = Sha512::new();
-        // hasher.update(&self.hash);
-        // hasher.update(self.round.to_le_bytes());
-        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
-        Digest(HashOut::rand())
+        let mut elements = Vec::new();
+        elements.extend_from_slice(&self.hash.to_vec_field());
+        elements.push(self.round.to_field());
+        Digest(PoseidonHash::hash_pad(&elements))
     }
 }
 
@@ -269,11 +263,10 @@ impl Timeout {
 
 impl Hash for Timeout {
     fn digest(&self) -> Digest {
-        // let mut hasher = Sha512::new();
-        // hasher.update(self.round.to_le_bytes());
-        // hasher.update(self.high_qc.round.to_le_bytes());
-        // Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
-        Digest(HashOut::rand())
+        let mut elements = Vec::new();
+        elements.push(self.round.to_field());
+        elements.push(self.high_qc.round.to_field());
+        Digest(PoseidonHash::hash_pad(&elements))
     }
 }
 

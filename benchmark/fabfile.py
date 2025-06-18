@@ -14,13 +14,13 @@ def local(ctx):
     bench_params = {
         "faults": 0,
         "nodes": 4,
-        "rate": 1_000,
+        "rate": 10,
         "tx_size": 512,
         "duration": 20,
     }
     node_params = {
         "consensus": {
-            "timeout_delay": 1_000,
+            "timeout_delay": 15_000,
             "sync_retry_delay": 10_000,
         },
         "mempool": {
@@ -32,8 +32,9 @@ def local(ctx):
         },
     }
     try:
-        ret = LocalBench(bench_params, node_params).run(debug=True).result()
-        print(ret)
+        LocalBench(bench_params, node_params).run(debug=True)
+        # ret = LocalBench(bench_params, node_params).run(debug=True).result()
+        # print(ret)
     except BenchError as e:
         Print.error(e)
 

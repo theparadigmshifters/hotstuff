@@ -12,6 +12,8 @@ use base64::{Engine as _, engine::general_purpose};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use std::fmt;
+use log::info;
+use std::time::Instant;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use std::cmp::Ordering;
 
@@ -35,7 +37,6 @@ impl SecretCircuit {
         let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_zk_config());
         let secret_hash = PoseidonHash::hash_no_pad(&secret.elements); // TODO: use [secret, secret]?
         let targets = Self::build(&mut builder, secret_hash);
-        dbg!(builder.num_gates());
         let cd = builder.build::<C>();
         Self {
             secret,
@@ -75,7 +76,10 @@ impl ProofService {
         let (tx, mut rx) = channel::<(Digest, oneshot::Sender<Proof<GoldilocksField, C, 2>>)>(100);
         tokio::spawn(async move {
             while let Some((digest, sender)) = rx.recv().await {
+                let start_time = Instant::now();
                 let proof = secret_circuit.prove(digest.0);
+                let elapsed = start_time.elapsed();
+                info!("prove completed in {:?}", elapsed);
                 let _ = sender.send(proof);
             }
         });
@@ -100,6 +104,10 @@ pub struct Digest(pub HashOut<GoldilocksField>);
 impl Digest {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_bytes()
+    }
+
+    pub fn to_vec_field(&self) -> Vec<GoldilocksField> {
+        self.0.elements.to_vec()
     }
 
     pub fn size(&self) -> usize {

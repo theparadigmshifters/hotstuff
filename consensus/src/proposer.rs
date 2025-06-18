@@ -71,15 +71,15 @@ impl Proposer {
         .await;
 
         if !block.payload.is_empty() {
-            info!("Created {}", block);
+            info!("Created block {}", block);
 
             #[cfg(feature = "benchmark")]
             for x in &block.payload {
                 // NOTE: This log entry is used to compute performance.
-                info!("Created {} -> {:?}", block, x);
+                info!("Created block {} -> {:?}", block, x);
             }
         }
-        debug!("Created {:?}", block);
+        debug!("Created block {:?}", block);
 
         // Broadcast our new block.
         debug!("Broadcasting {:?}", block);

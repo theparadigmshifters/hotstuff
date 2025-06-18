@@ -196,7 +196,7 @@ impl Core {
 
     #[async_recursion]
     async fn handle_vote(&mut self, vote: &Vote) -> ConsensusResult<()> {
-        debug!("Processing {:?}", vote);
+        debug!("Processing vote {:?}", vote);
         if vote.round < self.round {
             return Ok(());
         }
@@ -220,7 +220,7 @@ impl Core {
     }
 
     async fn handle_timeout(&mut self, timeout: &Timeout) -> ConsensusResult<()> {
-        debug!("Processing {:?}", timeout);
+        debug!("Processing timeout {:?}", timeout);
         if timeout.round < self.round {
             return Ok(());
         }
@@ -303,7 +303,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_block(&mut self, block: &Block) -> ConsensusResult<()> {
-        debug!("Processing {:?}", block);
+        debug!("Processing block {:?}", block);
 
         // Let's see if we have the last three ancestors of the block, that is:
         //      b0 <- |qc0; b1| <- |qc1; block|
@@ -409,6 +409,7 @@ impl Core {
         // Also, schedule a timer in case we don't hear from the leader.
         self.timer.reset();
         if self.name == self.leader_elector.get_leader(self.round) {
+            info!("Leader for round {}", self.round);
             self.generate_proposal(None).await;
         }
 
