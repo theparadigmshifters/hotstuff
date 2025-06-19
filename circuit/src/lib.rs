@@ -6,7 +6,7 @@ use placeholder_project_name_placeholder_zk::plonk::circuit_data::{CircuitData, 
 use placeholder_project_name_placeholder_zk::plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig};
 use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::plonk::circuit_builder::CircuitBuilder;
-use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::plonk::circuit_data::{VerifierCircuitData, VerifierOnlyCircuitData};
 use placeholder_project_name_placeholder_zk::plonk::config::GenericHashOut;
 use base64::{Engine as _, engine::general_purpose};
 use tokio::sync::mpsc::{channel, Sender};
@@ -63,6 +63,10 @@ impl SecretCircuit {
 
     pub fn vk(&self) -> VerifierOnlyCircuitData<C, D> {
         self.cd.verifier_only.clone()
+    }
+
+    pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
+        self.cd.verifier_data().clone()
     }
 }
 

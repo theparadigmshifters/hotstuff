@@ -33,7 +33,7 @@ impl Parameters {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Authority {
     pub stake: Stake,
-    pub vk: String,
+    pub vd: String,
     pub address: SocketAddr,
 }
 
@@ -48,8 +48,8 @@ impl Committee {
         Self {
             authorities: info
                 .into_iter()
-                .map(|(name, vk, stake, address)| {
-                    let authority = Authority { stake, vk, address };
+                .map(|(name, vd, stake, address)| {
+                    let authority = Authority { stake, vd, address };
                     (name, authority)
                 })
                 .collect(),

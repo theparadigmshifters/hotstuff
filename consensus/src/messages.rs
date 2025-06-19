@@ -2,13 +2,17 @@ use crate::config::Committee;
 use crate::consensus::{Round, ToField};
 use crate::error::{ConsensusError, ConsensusResult};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
+use base64::{Engine as _, engine::general_purpose};
 use circuit::{Hash, Digest, ProofService};
 use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
 use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
+use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Block {
@@ -57,8 +61,8 @@ impl Block {
             ConsensusError::UnknownAuthority(self.author)
         );
 
-        // Check the signature.
-        // self.signature.verify(&self.digest(), &self.author)?;
+        // Check the author proof.
+        verify_proof(&self.digest(), &self.author, committee, self.proof.clone().unwrap());
 
         // Check the embedded QC.
         if self.qc != QC::genesis() {
@@ -135,8 +139,8 @@ impl Vote {
             ConsensusError::UnknownAuthority(self.author)
         );
 
-        // Check the signature.
-        //self.signature.verify(&self.digest(), &self.author)?;
+        // Check the proof.
+        verify_proof(&self.digest(), &self.author, committee, self.proof.clone().unwrap());
         Ok(())
     }
 }
@@ -188,8 +192,10 @@ impl QC {
             ConsensusError::QCRequiresQuorum
         );
 
-        // Check the signatures.
-        // Signature::verify_batch(&self.digest(), &self.votes).map_err(ConsensusError::from)
+        // Check the proof.
+        for (author, proof) in &self.votes {
+            verify_proof(&self.digest(), author, committee, proof.clone());
+        }
         Ok(())
     }
 }
@@ -250,8 +256,8 @@ impl Timeout {
             ConsensusError::UnknownAuthority(self.author)
         );
 
-        // Check the signature.
-        //self.signature.verify(&self.digest(), &self.author)?;
+        // Check the proof.
+        verify_proof(&self.digest(), &self.author, committee, self.proof.clone().unwrap());
 
         // Check the embedded QC.
         if self.high_qc != QC::genesis() {
@@ -299,14 +305,14 @@ impl TC {
             ConsensusError::TCRequiresQuorum
         );
 
-        // Check the signatures.
-        // for (author, signature, high_qc_round) in &self.votes {
-        //     let mut hasher = Sha512::new();
-        //     hasher.update(self.round.to_le_bytes());
-        //     hasher.update(high_qc_round.to_le_bytes());
-        //     let digest = Digest(hasher.finalize().as_slice()[..32].try_into().unwrap());
-        //     signature.verify(&digest, author)?;
-        // }
+        // Check the proofs.
+        for (author, proof, high_qc_round) in &self.votes {
+            let mut elements = Vec::new();
+            elements.push(self.round.to_field());
+            elements.push(high_qc_round.to_field());
+            let digest = Digest(PoseidonHash::hash_pad(&elements));
+            verify_proof(&digest, author, committee, proof.clone());
+        }
         Ok(())
     }
 
@@ -319,4 +325,11 @@ impl fmt::Debug for TC {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "TC({}, {:?})", self.round, self.high_qc_rounds())
     }
+}
+
+fn verify_proof(digest: &Digest, author: &Digest, committee: &Committee, proof: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>) {
+    let vd_encoded = committee.authorities.get(author).map(|auth| auth.vd.clone()).unwrap();
+    let vd_decoded = general_purpose::STANDARD.decode(&vd_encoded).unwrap();
+    let vd = VerifierCircuitData::from_bytes(vd_decoded, &DefaultGateSerializer).unwrap();
+    vd.verify(ProofWithPublicInputs { proof: proof.into(), public_inputs: digest.to_vec_field() }).expect("proof verification failed");
 }

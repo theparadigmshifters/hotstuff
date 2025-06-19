@@ -5,6 +5,7 @@ use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::field::types::Sample;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use rand::rngs::StdRng;
 use rand::SeedableRng as _;
 use serde::de::DeserializeOwned;
@@ -88,7 +89,7 @@ impl Default for Secret {
 #[derive(Serialize, Deserialize)]
 pub struct PreImage {
     pub name: Digest,
-    pub vk: String,
+    pub vd: String,
     pub secret: Digest,
 }
 
@@ -97,11 +98,12 @@ impl PreImage {
         let secret = HashOut::<GoldilocksField>::rand();
         let secret_circuit = SecretCircuit::new(secret);
         let vk = secret_circuit.vk();
-        let vk_encoded = general_purpose::STANDARD.encode(&vk.to_bytes().unwrap());
         let vk_h: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = vk.try_into().unwrap();
         let name = HashOut::from(vk_h);
+        let vd = secret_circuit.vd();
+        let vd_encoded = general_purpose::STANDARD.encode(&vd.to_bytes(&DefaultGateSerializer).unwrap());
   
-        Self { name: Digest(name), vk: vk_encoded, secret: Digest(secret) }
+        Self { name: Digest(name), vd: vd_encoded, secret: Digest(secret) }
     }
 }
 
