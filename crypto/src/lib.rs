@@ -1,16 +1,35 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use ed25519_dalek as dalek;
 use ed25519_dalek::ed25519;
-use ed25519_dalek::Signer as _;
+use placeholder_project_name_placeholder_zk::field::types::Field;
+use placeholder_project_name_placeholder_zk::field::types::PrimeField64;
 use rand::rngs::OsRng;
+use rand::rngs::StdRng;
+use rand::Rng;
 use rand::{CryptoRng, RngCore};
 use serde::{de, ser, Deserialize, Serialize};
 use std::array::TryFromSliceError;
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
-
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
+use placeholder_project_name_placeholder_zk::{
+    plonk::{
+        circuit_builder::CircuitBuilder,
+        circuit_data::{CircuitConfig, CircuitData, VerifierCircuitData, CommonCircuitData},
+        config::PoseidonGoldilocksConfig,
+        proof::ProofWithPublicInputs,
+    },
+    iop::{
+        witness::{PartialWitness, WitnessWrite},
+    }
+};
 #[cfg(test)]
 #[path = "tests/crypto_tests.rs"]
 pub mod crypto_tests;
@@ -29,14 +48,28 @@ impl Digest {
     pub fn size(&self) -> usize {
         self.0.len()
     }
-    
-    pub fn random() -> Self {
-        let mut rng = OsRng; 
-        let mut bytes = [0u8; 32]; 
-        rng.fill_bytes(&mut bytes); 
+
+    pub fn to_field(&self) -> [GoldilocksField; 4] {
+       let mut elements = [GoldilocksField::ZERO; 4];
+        for i in 0..4 {
+            let start = i * 8;
+            let chunk = &self.0[start..start + 8];
+            let value = u64::from_le_bytes(chunk.try_into().unwrap());
+            elements[i] = GoldilocksField::from_canonical_u64(value);
+        }
+        elements
+    }
+
+    pub fn from_field(elements: [GoldilocksField; 4]) -> Self {
+        let mut bytes = [0u8; 32];
+        for i in 0..4 {
+            let value = elements[i].to_canonical_u64();
+            bytes[i * 8..(i + 1) * 8].copy_from_slice(&value.to_le_bytes());
+        }
         Digest(bytes)
     }
 }
+
 
 impl fmt::Debug for Digest {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -84,6 +117,25 @@ impl PublicKey {
             .map_err(|_| base64::DecodeError::InvalidLength)?;
         Ok(Self(array))
     }
+
+    pub fn to_field(&self) -> [GoldilocksField; 4] {
+       let mut elements = [GoldilocksField::ZERO; 4];
+        for i in 0..4 {
+            let start = i * 8;
+            let chunk = &self.0[start..start + 8];
+            let value = u64::from_le_bytes(chunk.try_into().unwrap());
+            elements[i] = GoldilocksField::from_canonical_u64(value);
+        }
+        elements
+    }
+    pub fn from_field(elements: [GoldilocksField; 4]) -> Self {
+        let mut bytes = [0u8; 32];
+        for i in 0..4 {
+            let value = elements[i].to_canonical_u64();
+            bytes[i * 8..(i + 1) * 8].copy_from_slice(&value.to_le_bytes());
+        }
+        PublicKey(bytes)
+    }
 }
 
 impl fmt::Debug for PublicKey {
@@ -125,7 +177,8 @@ impl AsRef<[u8]> for PublicKey {
 }
 
 /// Represents a secret key (in bytes).
-pub struct SecretKey([u8; 64]);
+#[derive(Clone)]
+pub struct SecretKey([u8; 32]);
 
 impl SecretKey {
     pub fn encode_base64(&self) -> String {
@@ -138,6 +191,26 @@ impl SecretKey {
             .try_into()
             .map_err(|_| base64::DecodeError::InvalidLength)?;
         Ok(Self(array))
+    }
+
+    pub fn to_field(&self) -> [GoldilocksField; 4] {
+       let mut elements = [GoldilocksField::ZERO; 4];
+        for i in 0..4 {
+            let start = i * 8;
+            let chunk = &self.0[start..start + 8];
+            let value = u64::from_le_bytes(chunk.try_into().unwrap());
+            elements[i] = GoldilocksField::from_canonical_u64(value);
+        }
+        elements
+    }
+
+    pub fn from_field(elements: [GoldilocksField; 4]) -> Self {
+        let mut bytes = [0u8; 32];
+        for i in 0..4 {
+            let value = elements[i].to_canonical_u64();
+            bytes[i * 8..(i + 1) * 8].copy_from_slice(&value.to_le_bytes());
+        }
+        SecretKey(bytes)
     }
 }
 
@@ -168,80 +241,120 @@ impl Drop for SecretKey {
 }
 
 pub fn generate_production_keypair() -> (PublicKey, SecretKey) {
-    generate_keypair(&mut OsRng)
+    let mut pri_key = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut pri_key);
+    let secret_key = SecretKey(pri_key);
+
+    let (circuit_data, _, _) =  generate_circuit(secret_key.to_field());
+    let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
+        .verifier_only
+        .try_into()
+        .expect("Failed to convert circuit data to verifier only type");
+    let name = HashOut::from(verifier_only);
+    (PublicKey::from_field(name.elements), secret_key)
 }
 
-pub fn generate_keypair<R>(csprng: &mut R) -> (PublicKey, SecretKey)
-where
-    R: CryptoRng + RngCore,
-{
-    let keypair = dalek::Keypair::generate(csprng);
-    let public = PublicKey(keypair.public.to_bytes());
-    let secret = SecretKey(keypair.to_bytes());
-    (public, secret)
+pub fn generate_keypair(mut rng: StdRng) -> (PublicKey, SecretKey) {
+    let mut pri_key = [0u8; 32];
+    rng.fill(&mut pri_key);
+    let secret_key = SecretKey(pri_key);
+
+    let (circuit_data, _, _) =  generate_circuit(secret_key.to_field());
+    let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
+        .verifier_only
+        .try_into()
+        .expect("Failed to convert circuit data to verifier only type");
+    let name = HashOut::from(verifier_only);
+    (PublicKey::from_field(name.elements), secret_key)
 }
 
-/// Represents an ed25519 signature.
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[derive(Debug)]
+pub enum Error {
+    InvalidPublicInputsLength { expected: usize, found: usize },
+    SecretHashMismatch,
+    BlockHashMismatch,
+    ProofVerificationFailed(String),
+    TryFromSliceError(TryFromSliceError),
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Signature {
-    part1: [u8; 32],
-    part2: [u8; 32],
+    proof: ProofWithPublicInputs<F, C, D>,
 }
 
 impl Signature {
-    pub fn new(digest: &Digest, secret: &SecretKey) -> Self {
-        let keypair = dalek::Keypair::from_bytes(&secret.0).expect("Unable to load secret key");
-        let sig = keypair.sign(&digest.0).to_bytes();
-        let part1 = sig[..32].try_into().expect("Unexpected signature length");
-        let part2 = sig[32..64].try_into().expect("Unexpected signature length");
-        Signature { part1, part2 }
+    pub fn default() -> Self {
+        let config = CircuitConfig::standard_recursion_config();
+        let builder = CircuitBuilder::<F, D>::new(config);
+        let circuit_data = builder.build::<C>();
+
+        let proof = circuit_data
+            .prove(PartialWitness::<GoldilocksField>::new())
+            .expect("Failed to generate default proof");
+
+        Signature { proof }
     }
 
-    fn flatten(&self) -> [u8; 64] {
-        [self.part1, self.part2]
-            .concat()
-            .try_into()
-            .expect("Unexpected signature length")
+    pub fn new(proof: ProofWithPublicInputs<F, C, D> ) -> Self {
+        Signature { proof }
     }
 
-    pub fn verify(&self, digest: &Digest, public_key: &PublicKey) -> Result<(), CryptoError> {
-        let signature = ed25519::signature::Signature::from_bytes(&self.flatten())?;
-        let key = dalek::PublicKey::from_bytes(&public_key.0)?;
-        key.verify_strict(&digest.0, &signature)
-    }
-
-    pub fn verify_batch<'a, I>(digest: &Digest, votes: I) -> Result<(), CryptoError>
-    where
-        I: IntoIterator<Item = &'a (PublicKey, Signature)>,
-    {
-        let mut messages: Vec<&[u8]> = Vec::new();
-        let mut signatures: Vec<dalek::Signature> = Vec::new();
-        let mut keys: Vec<dalek::PublicKey> = Vec::new();
-        for (key, sig) in votes.into_iter() {
-            messages.push(&digest.0[..]);
-            signatures.push(ed25519::signature::Signature::from_bytes(&sig.flatten())?);
-            keys.push(dalek::PublicKey::from_bytes(&key.0)?);
+    pub fn verify(&self, vk: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, common: CommonCircuitData<F, D>, digest: &Digest, secret_hash: &Digest) -> Result<(), Error> {
+        let public_inputs = self.proof.clone().public_inputs;
+        if public_inputs.len() != 8 {
+            return Err(Error::InvalidPublicInputsLength {
+                expected: 8,
+                found: public_inputs.len(),
+            });
         }
-        dalek::verify_batch(&messages[..], &signatures[..], &keys[..])
+        let secret_hash_fields: [GoldilocksField; 4] = public_inputs[0..4]
+            .try_into()
+            .map_err(|_| Error::InvalidPublicInputsLength { expected: 4, found: public_inputs[0..4].len() })?;
+        
+        let computed_secret_hash = Digest::from_field(secret_hash_fields);
+        if secret_hash != &computed_secret_hash {
+            return Err(Error::SecretHashMismatch);
+        }
+        let block_hash_fields: [GoldilocksField; 4] = public_inputs[4..8]
+            .try_into()
+            .map_err(|_| Error::InvalidPublicInputsLength { expected: 4, found: public_inputs[4..8].len() })?;
+        
+        let computed_block_hash = Digest::from_field(block_hash_fields);
+        if digest != &computed_block_hash {
+            return Err(Error::SecretHashMismatch)   
+        }
+        let verifier_circuit_data = VerifierCircuitData::<F, C, D> {
+            verifier_only: vk.into(),
+            common: common,
+        };
+        // Call the verify method on the struct
+        verifier_circuit_data.verify(
+            self.proof.clone(),
+        )        .map_err(|e| Error::ProofVerificationFailed(e.to_string()))?;
+        Ok(())
     }
+    
 }
 
 /// This service holds the node's private key. It takes digests as input and returns a signature
 /// over the digest (through a oneshot channel).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SignatureService {
     channel: Sender<(Digest, oneshot::Sender<Signature>)>,
 }
 
 impl SignatureService {
-    pub fn new(secret: SecretKey) -> Self {
-        let (tx, mut rx): (Sender<(_, oneshot::Sender<_>)>, _) = channel(100);
+    pub fn new(circuit_data: CircuitData<F, C, D>, secret_target: HashOutTarget, block_hash_target: HashOutTarget, secret: SecretKey) -> Self {
+        let (tx, mut rx): (Sender<(Digest, oneshot::Sender<Signature>)>, _) = channel(100);
         tokio::spawn(async move {
             while let Some((digest, sender)) = rx.recv().await {
-                let signature = Signature::new(&digest, &secret);
-                let _ = sender.send(signature);
-            }
-        });
+                let mut pw = PartialWitness::<GoldilocksField>::new();
+                pw.set_hash_target(secret_target, HashOut::from(secret.to_field())).unwrap();
+                pw.set_hash_target(block_hash_target, HashOut::from(digest.to_field())).unwrap();
+
+                let proof =circuit_data.prove(pw).unwrap();
+                let _ = sender.send(Signature::new(proof));
+            }  
+});
         Self { channel: tx }
     }
 
@@ -255,3 +368,21 @@ impl SignatureService {
             .expect("Failed to receive signature from Signature Service")
     }
 }
+
+const D: usize = 2;
+type C = PoseidonGoldilocksConfig;
+type F = GoldilocksField;
+
+pub fn generate_circuit(nonce: [GoldilocksField; 4]) -> (CircuitData<F, C, D>, HashOutTarget, HashOutTarget) {
+    let config = CircuitConfig::standard_recursion_zk_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let secret_target = builder.add_virtual_hash();
+    let block_hash_target = builder.add_virtual_hash();
+    builder.constant_hash(HashOut::from(nonce));
+    let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
+
+    builder.register_public_inputs(&computed_secret_hash.elements);
+    builder.register_public_inputs(&block_hash_target.elements);
+    (builder.build::<C>(), secret_target, block_hash_target)
+}
+

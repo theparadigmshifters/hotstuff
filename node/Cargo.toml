@@ -23,9 +23,11 @@ anyhow = "1.0.38"
 crypto = { path = "../crypto" }
 store = { path = "../store" }
 consensus = { path = "../consensus" }
+mempool = { path = "../mempool" }
+placeholder_project_name_placeholder_zk = { path = "../../monorepo/zk/plonky2" }
 
 [features]
-benchmark = ["consensus/benchmark"]
+benchmark = ["consensus/benchmark", "mempool/benchmark"]
 
 [[bin]]         
 name = "client"   

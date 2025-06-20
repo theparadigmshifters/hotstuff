@@ -1,5 +1,8 @@
-use crypto::PublicKey;
+use crypto::{Digest, PublicKey, SecretKey};
 use log::info;
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::plonk::circuit_data::CommonCircuitData;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -30,25 +33,28 @@ impl Parameters {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Authority {
     pub stake: Stake,
     pub address: SocketAddr,
+    pub vk: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData,
+    pub common: CommonCircuitData<GoldilocksField, 2>,
+    pub secret_hash: Digest,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Committee {
     pub authorities: HashMap<PublicKey, Authority>,
     pub epoch: EpochNumber,
 }
 
 impl Committee {
-    pub fn new(info: Vec<(PublicKey, Stake, SocketAddr)>, epoch: EpochNumber) -> Self {
+    pub fn new(info: Vec<(PublicKey, Stake, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, CommonCircuitData<GoldilocksField, 2>, Digest, SocketAddr)>, epoch: EpochNumber) -> Self {
         Self {
             authorities: info
                 .into_iter()
-                .map(|(name, stake, address)| {
-                    let authority = Authority { stake, address };
+                .map(|(name, stake, vk, common, secret_hash, address)| {
+                    let authority = Authority { stake, address, vk, secret_hash, common};
                     (name, authority)
                 })
                 .collect(),
@@ -73,6 +79,18 @@ impl Committee {
 
     pub fn address(&self, name: &PublicKey) -> Option<SocketAddr> {
         self.authorities.get(name).map(|x| x.address)
+    }
+
+    pub fn vk(&self, name: &PublicKey) -> Option<PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData> {
+        self.authorities.get(name).map(|x| x.vk)
+    }
+
+    pub fn common(&self, name: &PublicKey) -> Option<CommonCircuitData<GoldilocksField, 2>> {
+        self.authorities.get(name).map(|x| x.common.clone())
+    }
+
+    pub fn secret_hash(&self, name: &PublicKey) -> Option<Digest> {
+        self.authorities.get(name).map(|x| x.secret_hash.clone())
     }
 
     pub fn broadcast_addresses(&self, myself: &PublicKey) -> Vec<(PublicKey, SocketAddr)> {

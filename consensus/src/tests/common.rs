@@ -3,21 +3,28 @@ use crate::consensus::Round;
 use crate::messages::{Block, Timeout, Vote, QC};
 use bytes::Bytes;
 use crypto::Hash as _;
-use crypto::{generate_keypair, Digest, PublicKey, SecretKey, Signature};
+use crypto::{Digest, PublicKey, SecretKey, Signature};
 use futures::sink::SinkExt as _;
 use futures::stream::StreamExt as _;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use rand::rngs::StdRng;
-use rand::SeedableRng as _;
+use rand::{Rng, SeedableRng as _};
+use std::convert::TryInto;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use crypto::{generate_circuit, generate_keypair};
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 
 // Fixture.
 pub fn keys() -> Vec<(PublicKey, SecretKey)> {
-    let mut rng = StdRng::from_seed([0; 32]);
-    (0..4).map(|_| generate_keypair(&mut rng)).collect()
+    let rng = StdRng::from_seed([0; 32]);
+    (0..4).map(|_| generate_keypair(rng.clone())).collect()
 }
+
 
 // Fixture.
 pub fn committee() -> Committee {
@@ -25,10 +32,18 @@ pub fn committee() -> Committee {
         keys()
             .into_iter()
             .enumerate()
-            .map(|(i, (name, _))| {
+            .map(|(i, (name, secret))| {
+                let (circuit_data, _, _) =  generate_circuit(secret.to_field());
+                let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
+                        .verifier_only
+                        .try_into()
+                        .expect("Failed to convert circuit data to verifier only type");
+                let common = circuit_data.common;
+                let secret_hash = Digest::from_field(PoseidonHash::hash_no_pad(&secret.to_field()).elements);
                 let address = format!("127.0.0.1:{}", i).parse().unwrap();
                 let stake = 1;
-                (name, stake, address)
+                println!("Authority {}: {} with address {}", i, name, address);
+                (name, stake, verifier_only, common, secret_hash, address)
             })
             .collect(),
         /* epoch */ 100,
@@ -43,156 +58,4 @@ pub fn committee_with_base_port(base_port: u16) -> Committee {
         authority.address.set_port(base_port + port);
     }
     committee
-}
-
-impl Block {
-    pub fn new_from_key(
-        qc: QC,
-        author: PublicKey,
-        round: Round,
-        payload: Digest,
-        secret: &SecretKey,
-    ) -> Self {
-        let block = Block {
-            qc,
-            tc: None,
-            author,
-            round,
-            payload,
-            signature: Signature::default(),
-        };
-        let signature = Signature::new(&block.digest(), secret);
-        Self { signature, ..block }
-    }
-}
-
-impl PartialEq for Block {
-    fn eq(&self, other: &Self) -> bool {
-        self.digest() == other.digest()
-    }
-}
-
-impl Vote {
-    pub fn new_from_key(hash: Digest, round: Round, author: PublicKey, secret: &SecretKey) -> Self {
-        let vote = Self {
-            hash,
-            round,
-            author,
-            signature: Signature::default(),
-        };
-        let signature = Signature::new(&vote.digest(), &secret);
-        Self { signature, ..vote }
-    }
-}
-
-impl PartialEq for Vote {
-    fn eq(&self, other: &Self) -> bool {
-        self.digest() == other.digest()
-    }
-}
-
-impl Timeout {
-    pub fn new_from_key(high_qc: QC, round: Round, author: PublicKey, secret: &SecretKey) -> Self {
-        let timeout = Self {
-            high_qc,
-            round,
-            author,
-            signature: Signature::default(),
-        };
-        let signature = Signature::new(&timeout.digest(), &secret);
-        Self {
-            signature,
-            ..timeout
-        }
-    }
-}
-
-impl PartialEq for Timeout {
-    fn eq(&self, other: &Self) -> bool {
-        self.digest() == other.digest()
-    }
-}
-
-// Fixture.
-pub fn block() -> Block {
-    let (public_key, secret_key) = keys().pop().unwrap();
-    Block::new_from_key(QC::genesis(), public_key, 1, Digest::default(), &secret_key)
-}
-
-// Fixture.
-pub fn vote() -> Vote {
-    let (public_key, secret_key) = keys().pop().unwrap();
-    Vote::new_from_key(block().digest(), 1, public_key, &secret_key)
-}
-
-// Fixture.
-pub fn qc() -> QC {
-    let qc = QC {
-        hash: Digest::default(),
-        round: 1,
-        votes: Vec::new(),
-    };
-    let digest = qc.digest();
-    let mut keys = keys();
-    let votes: Vec<_> = (0..3)
-        .map(|_| {
-            let (public_key, secret_key) = keys.pop().unwrap();
-            (public_key, Signature::new(&digest, &secret_key))
-        })
-        .collect();
-    QC { votes, ..qc }
-}
-
-// Fixture.
-pub fn chain(keys: Vec<(PublicKey, SecretKey)>) -> Vec<Block> {
-    let mut latest_qc = QC::genesis();
-    keys.iter()
-        .enumerate()
-        .map(|(i, key)| {
-            // Make a block.
-            let (public_key, secret_key) = key;
-            let block = Block::new_from_key(
-                latest_qc.clone(),
-                *public_key,
-                1 + i as Round,
-                Digest::default(),
-                secret_key,
-            );
-
-            // Make a qc for that block (it will be used for the next block).
-            let qc = QC {
-                hash: block.digest(),
-                round: block.round,
-                votes: Vec::new(),
-            };
-            let digest = qc.digest();
-            let votes: Vec<_> = keys
-                .iter()
-                .map(|(public_key, secret_key)| (*public_key, Signature::new(&digest, secret_key)))
-                .collect();
-            latest_qc = QC { votes, ..qc };
-
-            // Return the block.
-            block
-        })
-        .collect()
-}
-
-// Fixture
-pub fn listener(address: SocketAddr, expected: Option<Bytes>) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        let listener = TcpListener::bind(&address).await.unwrap();
-        let (socket, _) = listener.accept().await.unwrap();
-        let transport = Framed::new(socket, LengthDelimitedCodec::new());
-        let (mut writer, mut reader) = transport.split();
-        match reader.next().await {
-            Some(Ok(received)) => {
-                writer.send(Bytes::from("Ack")).await.unwrap();
-                if let Some(expected) = expected {
-                    assert_eq!(received.freeze(), expected);
-                }
-            }
-            _ => panic!("Failed to receive network message"),
-        }
-    })
 }

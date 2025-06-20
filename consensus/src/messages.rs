@@ -2,24 +2,22 @@ use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
 use crypto::{Digest, Hash, PublicKey, Signature, SignatureService};
-use ed25519_dalek::Digest as _;
-use ed25519_dalek::Sha512;
+use placeholder_project_name_placeholder_zk::field::types::Field;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::convert::TryInto;
 use std::fmt;
+use std::iter::once;
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 
-#[cfg(test)]
-#[path = "tests/messages_tests.rs"]
-pub mod messages_tests;
-
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Block {
     pub qc: QC,
     pub tc: Option<TC>,
     pub author: PublicKey,
     pub round: Round,
-    pub payload: Digest,
+    pub payload: Vec<Digest>,
     pub signature: Signature,
 }
 
@@ -29,7 +27,7 @@ impl Block {
         tc: Option<TC>,
         author: PublicKey,
         round: Round,
-        payload: Digest,
+        payload: Vec<Digest>,
         mut signature_service: SignatureService,
     ) -> Self {
         let block = Self {
@@ -45,7 +43,14 @@ impl Block {
     }
 
     pub fn genesis() -> Self {
-        Block::default()
+        Self {
+            qc: QC::genesis(),
+            tc: Some(TC::default()),
+            author: PublicKey::default(),
+            round: 0,
+            payload: Vec::new(),
+            signature: Signature::default(),
+        }
     }
 
     pub fn parent(&self) -> &Digest {
@@ -60,8 +65,11 @@ impl Block {
             ConsensusError::UnknownAuthority(self.author)
         );
 
+        let vk = committee.vk(&self.author).unwrap();
+        let common = committee.common(&self.author).unwrap();
+        let secret_hash = committee.secret_hash(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
 
         // Check the embedded QC.
         if self.qc != QC::genesis() {
@@ -78,12 +86,15 @@ impl Block {
 
 impl Hash for Block {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(self.author.0);
-        hasher.update(self.round.to_le_bytes()); 
-        hasher.update(self.payload.to_vec());
-        hasher.update(&self.qc.hash);
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        let block_data: Vec<GoldilocksField> = self.author.to_field().iter()
+            .cloned()
+            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
+            .chain(self.payload.iter().map(|x| GoldilocksField::from_canonical_u64(x.size() as u64)))
+            .chain(self.qc.hash.to_field().iter().cloned())
+            .collect::<Vec<_>>();
+
+        let block_hash = PoseidonHash::hash_no_pad(&block_data);
+        Digest::from_field(block_hash.elements)
     }
 }
 
@@ -96,7 +107,7 @@ impl fmt::Debug for Block {
             self.author,
             self.round,
             self.qc,
-            self.payload,
+            self.payload.iter().map(|x| x.size()).sum::<usize>(),
         )
     }
 }
@@ -137,19 +148,22 @@ impl Vote {
             committee.stake(&self.author) > 0,
             ConsensusError::UnknownAuthority(self.author)
         );
-
+        let vk = committee.vk(&self.author).unwrap();
+        let common = committee.common(&self.author).unwrap();
+        let secret_hash = committee.secret_hash(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
         Ok(())
     }
 }
 
 impl Hash for Vote {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(&self.hash);
-        hasher.update(self.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        let vote_data = self.hash.to_field().iter()
+            .cloned()
+            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
+            .collect::<Vec<_>>();
+        Digest::from_field(PoseidonHash::hash_no_pad(&vote_data).elements)
     }
 }
 
@@ -189,19 +203,27 @@ impl QC {
         ensure!(
             weight >= committee.quorum_threshold(),
             ConsensusError::QCRequiresQuorum
-        );
+        ); 
+         // Check the signatures.
+        for (author, signature) in &self.votes {
+            let vk = committee.vk(&author).unwrap();
+            let common = committee.common(&author).unwrap();
+            let secret_hash = committee.secret_hash(&author).unwrap();
 
-        // Check the signatures.
-        Signature::verify_batch(&self.digest(), &self.votes).map_err(ConsensusError::from)
+            // Check the signature.
+            signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
+        }
+        Ok(())
     }
 }
 
 impl Hash for QC {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(&self.hash);
-        hasher.update(self.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        let qc_data: Vec<GoldilocksField> = self.hash.to_field().iter()
+            .cloned()
+            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
+            .collect::<Vec<_>>();
+        Digest::from_field(PoseidonHash::hash_no_pad(&qc_data).elements)
     }
 }
 
@@ -251,9 +273,12 @@ impl Timeout {
             committee.stake(&self.author) > 0,
             ConsensusError::UnknownAuthority(self.author)
         );
-
+        
+        let vk = committee.vk(&self.author).unwrap();
+        let common = committee.common(&self.author).unwrap();
+        let secret_hash = committee.secret_hash(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(&self.digest(), &self.author)?;
+        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
 
         // Check the embedded QC.
         if self.high_qc != QC::genesis() {
@@ -265,10 +290,11 @@ impl Timeout {
 
 impl Hash for Timeout {
     fn digest(&self) -> Digest {
-        let mut hasher = Sha512::new();
-        hasher.update(self.round.to_le_bytes());
-        hasher.update(self.high_qc.round.to_le_bytes());
-        Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
+        let data: Vec<GoldilocksField> = once(GoldilocksField::from_canonical_u64(self.round))
+            .chain(once(GoldilocksField::from_canonical_u64(self.high_qc.round)))
+            .collect();
+        let hash_out = PoseidonHash::hash_no_pad(&data).elements;
+        Digest::from_field(hash_out)
     }
 }
 
@@ -278,7 +304,7 @@ impl fmt::Debug for Timeout {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct TC {
     pub round: Round,
     pub votes: Vec<(PublicKey, Signature, Round)>,
@@ -303,11 +329,19 @@ impl TC {
 
         // Check the signatures.
         for (author, signature, high_qc_round) in &self.votes {
-            let mut hasher = Sha512::new();
-            hasher.update(self.round.to_le_bytes());
-            hasher.update(high_qc_round.to_le_bytes());
-            let digest = Digest(hasher.finalize().as_slice()[..32].try_into().unwrap());
-            signature.verify(&digest, author)?;
+            let digest = Digest::from_field(
+                PoseidonHash::hash_no_pad(
+                    &once(GoldilocksField::from_canonical_u64(self.round))
+                        .chain(once(GoldilocksField::from_canonical_u64(*high_qc_round)))
+                        .collect::<Vec<_>>()
+                ).elements,
+            );
+            let vk = committee.vk(&author).unwrap();
+            let common = committee.common(&author).unwrap();
+            let secret_hash = committee.secret_hash(&author).unwrap();
+
+            // Check the signature.
+            signature.verify(vk, common, &digest, &secret_hash).unwrap();
         }
         Ok(())
     }

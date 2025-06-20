@@ -1,13 +1,14 @@
 use consensus::{Committee as ConsensusCommittee, Parameters as ConsensusParameters};
-use crypto::{generate_keypair, generate_production_keypair, PublicKey, SecretKey};
-use rand::rngs::StdRng;
-use rand::SeedableRng as _;
+use crypto::{generate_production_keypair, PublicKey, SecretKey};
+use mempool::{Committee as MempoolCommittee, Parameters as MempoolParameters};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::BufWriter;
 use std::io::Write as _;
 use thiserror::Error;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -49,6 +50,7 @@ pub trait Export: Serialize + DeserializeOwned {
 #[derive(Serialize, Deserialize, Default)]
 pub struct Parameters {
     pub consensus: ConsensusParameters,
+    pub mempool: MempoolParameters,
 }
 
 impl Export for Parameters {}
@@ -68,17 +70,35 @@ impl Secret {
 
 impl Export for Secret {}
 
-impl Default for Secret {
-    fn default() -> Self {
-        let mut rng = StdRng::from_seed([0; 32]);
-        let (name, secret) = generate_keypair(&mut rng);
-        Self { name, secret }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Committee {
     pub consensus: ConsensusCommittee,
+    pub mempool: MempoolCommittee,
 }
 
-impl Export for Committee {}
+impl  Committee {
+    pub fn new(
+        mempool: MempoolCommittee,
+        consensus: ConsensusCommittee,
+    ) -> Self {
+        Self { mempool, consensus }
+    }
+
+    pub fn read(path: &str) -> Result<Self, ConfigError> {
+        Committee::read(path)
+    }
+
+    pub fn write(&self, path: &str) -> Result<(), ConfigError> {
+         let writer = || -> Result<(), std::io::Error> {
+            let file = OpenOptions::new().create(true).write(true).open(path)?;
+            let mut writer = BufWriter::new(file);
+            writer.write_all(b"\n")?;
+            Ok(())
+        };
+        writer().map_err(|e| ConfigError::WriteError {
+            file: path.to_string(),
+            message: e.to_string(),
+        })
+    }
+    
+}

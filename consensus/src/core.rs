@@ -3,6 +3,7 @@ use crate::config::Committee;
 use crate::consensus::{ConsensusMessage, Round};
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::leader::LeaderElector;
+use crate::mempool::MempoolDriver;
 use crate::messages::{Block, Timeout, Vote, QC, TC};
 use crate::proposer::ProposerMessage;
 use crate::synchronizer::Synchronizer;
@@ -17,16 +18,6 @@ use std::cmp::max;
 use std::collections::VecDeque;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
-use crypto::Digest;
-use std::convert::TryInto;
-use serde::{Deserialize, Serialize};
-
-#[cfg(test)]
-#[path = "tests/core_tests.rs"]
-pub mod core_tests;
-
-pub const LASTEST_ROUND: &str = "latest_round";
-const CONSENSUS_STATE_KEY: &str = "consensus_state";
 
 pub struct Core {
     name: PublicKey,
@@ -34,6 +25,7 @@ pub struct Core {
     store: Store,
     signature_service: SignatureService,
     leader_elector: LeaderElector,
+    mempool_driver: MempoolDriver,
     synchronizer: Synchronizer,
     rx_message: Receiver<ConsensusMessage>,
     rx_loopback: Receiver<Block>,
@@ -46,15 +38,6 @@ pub struct Core {
     timer: Timer,
     aggregator: Aggregator,
     network: SimpleSender,
-    state_changed: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ConsensusState {
-    round: Round,
-    last_voted_round: Round,
-    last_committed_round: Round,
-    high_qc: QC,
 }
 
 impl Core {
@@ -65,6 +48,7 @@ impl Core {
         signature_service: SignatureService,
         store: Store,
         leader_elector: LeaderElector,
+        mempool_driver: MempoolDriver,
         synchronizer: Synchronizer,
         timeout_delay: u64,
         rx_message: Receiver<ConsensusMessage>,
@@ -72,37 +56,26 @@ impl Core {
         tx_proposer: Sender<ProposerMessage>,
         tx_commit: Sender<Block>,
     ) {
-           
         tokio::spawn(async move {
-            let state = store.clone()
-            .read(CONSENSUS_STATE_KEY.as_bytes().to_vec())
-            .await.unwrap_or_default()
-                .map(|bytes| bincode::deserialize(&bytes).expect("Failed to deserialize consensus state"))
-                .unwrap_or_else(|| ConsensusState {
-                    round: 1,
-                    last_voted_round: 0,
-                    last_committed_round: 0,
-                    high_qc: QC::genesis(),
-                });
             Self {
                 name,
                 committee: committee.clone(),
                 signature_service,
                 store,
                 leader_elector,
+                mempool_driver,
                 synchronizer,
                 rx_message,
                 rx_loopback,
                 tx_proposer,
                 tx_commit,
-                round: state.round,
-                last_voted_round: state.last_voted_round,
-                last_committed_round: state.last_committed_round,
-                high_qc: state.high_qc,
+                round: 1,
+                last_voted_round: 0,
+                last_committed_round: 0,
+                high_qc: QC::genesis(),
                 timer: Timer::new(timeout_delay),
                 aggregator: Aggregator::new(committee),
                 network: SimpleSender::new(),
-                state_changed: false,
             }
             .run()
             .await
@@ -113,48 +86,10 @@ impl Core {
         let key = block.digest().to_vec();
         let value = bincode::serialize(block).expect("Failed to serialize block");
         self.store.write(key, value).await;
-
-        // Store the payload hashes in the store.
-        let latest_round = self
-            .store
-            .read(LASTEST_ROUND.as_bytes().to_vec())
-            .await
-            .unwrap_or_default();
-        
-        let mut round: u64 = 0;
-        if !latest_round.is_none() {
-            round = u64::from_be_bytes(latest_round.unwrap().try_into().expect("Expected a Vec<u8> of length 8"));       
-        }
-        let mut payload_hashes = Vec::<Digest>::new();
-
-        if round == block.round {
-            let store_payload = self.store.read(block.round.to_be_bytes().to_vec()).await.unwrap_or_default();
-            payload_hashes = bincode::deserialize::<Vec<Digest>>(&store_payload.unwrap_or_default()).unwrap_or_default();
-           
-            if !payload_hashes.contains(&block.payload) {
-               payload_hashes.push(block.payload.clone());
-            }
-        } else if round < block.round {
-            payload_hashes.push(block.payload.clone());
-        } else {
-            warn!("The block round is less than the last round");
-            return;
-        }
-        let payload_hashes_se = bincode::serialize(&payload_hashes).unwrap();
-        self.store.write(block.round.to_be_bytes().to_vec(), payload_hashes_se).await;
-        self.store.write(LASTEST_ROUND.as_bytes().to_vec(), block.round.to_be_bytes().to_vec()).await;
-        info!("store block sucess: {:?}", payload_hashes);
-    
-    }
-
-    async fn persist_state(&mut self, state: &ConsensusState) {
-        let serialized_state = bincode::serialize(state).expect("Failed to serialize consensus state");
-        self.store.write(CONSENSUS_STATE_KEY.as_bytes().to_vec(), serialized_state).await;
     }
 
     fn increase_last_voted_round(&mut self, target: Round) {
         self.last_voted_round = max(self.last_voted_round, target);
-        self.state_changed = true;
     }
 
     async fn make_vote(&mut self, block: &Block) -> Option<Vote> {
@@ -197,23 +132,29 @@ impl Core {
 
         // Save the last committed block.
         self.last_committed_round = block.round;
-        self.state_changed = true;
 
         // Send all the newly committed blocks to the node's application layer.
         while let Some(block) = to_commit.pop_back() {
+            if !block.payload.is_empty() {
+                info!("Committed {}", block);
+
+                #[cfg(feature = "benchmark")]
+                for x in &block.payload {
+                    // NOTE: This log entry is used to compute performance.
+                    info!("Committed {} -> {:?}", block, x);
+                }
+            }
             debug!("Committed {:?}", block);
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }
         }
-        info!("Committed block {:?}", block.round);
         Ok(())
     }
 
     fn update_high_qc(&mut self, qc: &QC) {
         if qc.round > self.high_qc.round {
             self.high_qc = qc.clone();
-            self.state_changed = true;
         }
     }
 
@@ -322,14 +263,12 @@ impl Core {
 
     #[async_recursion]
     async fn advance_round(&mut self, round: Round) {
-        // old round ingore
         if round < self.round {
             return;
         }
         // Reset the timer and advance round.
         self.timer.reset();
         self.round = round + 1;
-        self.state_changed = true;
         debug!("Moved to round {}", self.round);
 
         // Cleanup the vote aggregator.
@@ -345,9 +284,15 @@ impl Core {
     }
 
     async fn cleanup_proposer(&mut self, b0: &Block, b1: &Block, block: &Block) {
-        let rounds = vec![b0.round, b1.round, block.round];
+        let digests = b0
+            .payload
+            .iter()
+            .cloned()
+            .chain(b1.payload.iter().cloned())
+            .chain(block.payload.iter().cloned())
+            .collect();
         self.tx_proposer
-            .send(ProposerMessage::Cleanup(rounds))
+            .send(ProposerMessage::Cleanup(digests))
             .await
             .expect("Failed to send message to proposer");
     }
@@ -382,6 +327,7 @@ impl Core {
         // Check if we can commit the head of the 2-chain.
         // Note that we commit blocks only if we have all its ancestors.
         if b0.round + 1 == b1.round {
+            self.mempool_driver.cleanup(b0.round).await;
             self.commit(b0).await?;
         }
 
@@ -395,7 +341,7 @@ impl Core {
         // See if we can vote for this block.
         if let Some(vote) = self.make_vote(block).await {
             debug!("Created {:?}", vote);
-            let next_leader: PublicKey = self.leader_elector.get_leader(self.round + 1);
+            let next_leader = self.leader_elector.get_leader(self.round + 1);
             if next_leader == self.name {
                 self.handle_vote(&vote).await?;
             } else {
@@ -409,7 +355,6 @@ impl Core {
                 self.network.send(address, Bytes::from(message)).await;
             }
         }
-
         Ok(())
     }
 
@@ -435,6 +380,13 @@ impl Core {
         // Process the TC (if any). This may also allow us to advance round.
         if let Some(ref tc) = block.tc {
             self.advance_round(tc.round).await;
+        }
+
+        // Let's see if we have the block's data. If we don't, the mempool
+        // will get it and then make us resume processing this block.
+        if !self.mempool_driver.verify(block.clone()).await? {
+            debug!("Processing of {} suspended: missing payload", digest);
+            return Ok(());
         }
 
         // All check pass, we can process this block.
@@ -480,15 +432,6 @@ impl Core {
                 Err(ConsensusError::StoreError(e)) => error!("{}", e),
                 Err(ConsensusError::SerializationError(e)) => error!("Store corrupted. {}", e),
                 Err(e) => warn!("{}", e),
-            }
-            if self.state_changed {
-                self.persist_state(&ConsensusState {
-                    round: self.round,
-                    last_voted_round: self.last_voted_round,
-                    last_committed_round: self.last_committed_round,
-                    high_qc: self.high_qc.clone(),
-                }).await;
-                self.state_changed = false;
             }
         }
     }

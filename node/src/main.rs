@@ -9,8 +9,15 @@ use consensus::Committee as ConsensusCommittee;
 use env_logger::Env;
 use futures::future::join_all;
 use log::error;
+use mempool::Committee as MempoolCommittee;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
+use std::convert::TryInto;
 use std::fs;
 use tokio::task::JoinHandle;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use crypto::{PublicKey, generate_circuit, SecretKey, Digest};
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -104,21 +111,44 @@ fn deploy_testbed(nodes: u16) -> Result<Vec<JoinHandle<()>>, Box<dyn std::error:
 
     // Print the committee file.
     let epoch = 1;
-    let consensus_committee = ConsensusCommittee::new(
+    let mempool_committee = MempoolCommittee::new(
         keys.iter()
             .enumerate()
             .map(|(i, key)| {
                 let name = key.name;
                 let stake = 1;
-                let addresses = format!("127.0.0.1:{}", 25_200 + i).parse().unwrap();
-                (name, stake, addresses)
+                let front = format!("127.0.0.1:{}", 25_000 + i).parse().unwrap();
+                let mempool = format!("127.0.0.1:{}", 25_100 + i).parse().unwrap();
+                (name, stake, front, mempool)
             })
             .collect(),
         epoch,
     );
+    let consensus_committee = ConsensusCommittee::new(
+        keys.iter()
+            .enumerate()
+            .map(|(i, key)| {
+                let name = key.name;
+                let secret = &key.secret;
+                let (circuit_data, _, _) =  generate_circuit(secret.to_field());
+                let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
+                        .verifier_only
+                        .try_into()
+                        .expect("Failed to convert circuit data to verifier only type");
+                let common = circuit_data.common;
+                let secret_hash = Digest::from_field(PoseidonHash::hash_no_pad(&secret.to_field()).elements);
+                let stake = 1;
+                let addresses = format!("127.0.0.1:{}", 25_200 + i).parse().unwrap();
+                (name, stake, verifier_only, common, secret_hash, addresses)
+            }).collect(),
+        epoch,
+    );
+
     let committee_file = "committee.json";
     let _ = fs::remove_file(committee_file);
+
     Committee {
+        mempool: mempool_committee,
         consensus: consensus_committee,
     }
     .write(committee_file)?;

@@ -21,7 +21,8 @@ async-trait = "0.1.50"
 store = { path = "../store" }
 crypto = { path = "../crypto" }
 network = { path = "../network" }
-rand = "0.7.3"
+mempool = { path = "../mempool" }
+placeholder_project_name_placeholder_zk = { path = "../../monorepo/zk/plonky2" }
 env_logger = "0.11.8"
 
 [dev-dependencies]
