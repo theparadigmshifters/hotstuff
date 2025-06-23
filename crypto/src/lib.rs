@@ -357,15 +357,15 @@ const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
 type F = GoldilocksField;
 
-pub fn generate_circuit(secret: [GoldilocksField; 4]) -> (CircuitData<F, C, D>, HashOutTarget, HashOutTarget) {
+pub fn generate_circuit(secret_hash: HashOut<GoldilocksField>) -> (CircuitData<F, C, D>, HashOutTarget, HashOutTarget) {
     let config = CircuitConfig::standard_recursion_zk_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
     let secret_target = builder.add_virtual_hash();
     let block_hash_target = builder.add_virtual_hash_public_input();
-    let secret = builder.constant_hash(HashOut::from(secret));
-    // let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
+    let secret = builder.constant_hash(secret_hash);
+    let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
 
-    builder.connect_hashes(secret, secret_target);
+    builder.connect_hashes(secret, computed_secret_hash);
 
     (builder.build::<C>(), secret_target, block_hash_target)
 }

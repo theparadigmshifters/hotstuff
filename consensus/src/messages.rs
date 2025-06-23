@@ -91,7 +91,7 @@ impl Hash for Block {
             .chain(self.qc.hash.to_field().iter().cloned())
             .collect::<Vec<_>>();
 
-        let block_hash = PoseidonHash::hash_no_pad(&block_data);
+        let block_hash = PoseidonHash::hash_pad(&block_data);
         Digest::from_field(block_hash.elements)
     }
 }
@@ -159,7 +159,7 @@ impl Hash for Vote {
             .cloned()
             .chain(once(GoldilocksField::from_canonical_u64(self.round)))
             .collect::<Vec<_>>();
-        Digest::from_field(PoseidonHash::hash_no_pad(&vote_data).elements)
+        Digest::from_field(PoseidonHash::hash_pad(&vote_data).elements)
     }
 }
 
@@ -216,7 +216,7 @@ impl Hash for QC {
             .cloned()
             .chain(once(GoldilocksField::from_canonical_u64(self.round)))
             .collect::<Vec<_>>();
-        Digest::from_field(PoseidonHash::hash_no_pad(&qc_data).elements)
+        Digest::from_field(PoseidonHash::hash_pad(&qc_data).elements)
     }
 }
 
@@ -284,7 +284,7 @@ impl Hash for Timeout {
         let data: Vec<GoldilocksField> = once(GoldilocksField::from_canonical_u64(self.round))
             .chain(once(GoldilocksField::from_canonical_u64(self.high_qc.round)))
             .collect();
-        let hash_out = PoseidonHash::hash_no_pad(&data).elements;
+        let hash_out = PoseidonHash::hash_pad(&data).elements;
         Digest::from_field(hash_out)
     }
 }
@@ -321,7 +321,7 @@ impl TC {
         // Check the signatures.
         for (author, signature, high_qc_round) in &self.votes {
             let digest = Digest::from_field(
-                PoseidonHash::hash_no_pad(
+                PoseidonHash::hash_pad(
                     &once(GoldilocksField::from_canonical_u64(self.round))
                         .chain(once(GoldilocksField::from_canonical_u64(*high_qc_round)))
                         .collect::<Vec<_>>()
