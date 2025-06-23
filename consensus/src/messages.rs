@@ -65,11 +65,9 @@ impl Block {
             ConsensusError::UnknownAuthority(self.author)
         );
 
-        let vk = committee.vk(&self.author).unwrap();
-        let common = committee.common(&self.author).unwrap();
-        let secret_hash = committee.secret_hash(&self.author).unwrap();
+       let vd = committee.vd(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
+        self.signature.verify(vd, &self.digest()).unwrap();
 
         // Check the embedded QC.
         if self.qc != QC::genesis() {
@@ -148,11 +146,9 @@ impl Vote {
             committee.stake(&self.author) > 0,
             ConsensusError::UnknownAuthority(self.author)
         );
-        let vk = committee.vk(&self.author).unwrap();
-        let common = committee.common(&self.author).unwrap();
-        let secret_hash = committee.secret_hash(&self.author).unwrap();
+        let vd = committee.vd(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
+        self.signature.verify(vd, &self.digest()).unwrap();
         Ok(())
     }
 }
@@ -206,12 +202,9 @@ impl QC {
         ); 
          // Check the signatures.
         for (author, signature) in &self.votes {
-            let vk = committee.vk(&author).unwrap();
-            let common = committee.common(&author).unwrap();
-            let secret_hash = committee.secret_hash(&author).unwrap();
-
+             let vd = committee.vd(&author).unwrap();
             // Check the signature.
-            signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
+            signature.verify(vd, &self.digest()).unwrap();
         }
         Ok(())
     }
@@ -274,11 +267,9 @@ impl Timeout {
             ConsensusError::UnknownAuthority(self.author)
         );
         
-        let vk = committee.vk(&self.author).unwrap();
-        let common = committee.common(&self.author).unwrap();
-        let secret_hash = committee.secret_hash(&self.author).unwrap();
+        let vd = committee.vd(&self.author).unwrap();
         // Check the signature.
-        self.signature.verify(vk, common, &self.digest(), &secret_hash).unwrap();
+        self.signature.verify(vd, &self.digest()).unwrap();
 
         // Check the embedded QC.
         if self.high_qc != QC::genesis() {
@@ -336,12 +327,9 @@ impl TC {
                         .collect::<Vec<_>>()
                 ).elements,
             );
-            let vk = committee.vk(&author).unwrap();
-            let common = committee.common(&author).unwrap();
-            let secret_hash = committee.secret_hash(&author).unwrap();
-
+            let vd = committee.vd(&author).unwrap();
             // Check the signature.
-            signature.verify(vk, common, &digest, &secret_hash).unwrap();
+            signature.verify(vd, &digest).unwrap();
         }
         Ok(())
     }

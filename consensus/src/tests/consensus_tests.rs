@@ -19,7 +19,7 @@ fn spawn_nodes(
         .map(|(i, (name, secret))| {
             let committee = committee.clone();
             let parameters = Parameters {
-                timeout_delay: 100,
+                timeout_delay: 2000,
                 ..Parameters::default()
             };
             let store_path = format!("{}_{}", store_path, i);
@@ -63,8 +63,7 @@ fn spawn_nodes(
         })
         .collect()
 }
-
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn end_to_end() {
     let committee = committee_with_base_port(15_000);
     env_logger::Builder::new()

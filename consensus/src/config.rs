@@ -1,8 +1,9 @@
 use crypto::{Digest, PublicKey, SecretKey};
 use log::info;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
-use placeholder_project_name_placeholder_zk::plonk::circuit_data::CommonCircuitData;
+use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
+use placeholder_project_name_placeholder_zk::plonk::config::PoseidonGoldilocksConfig;
+use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -33,28 +34,26 @@ impl Parameters {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Authority {
     pub stake: Stake,
     pub address: SocketAddr,
-    pub vk: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData,
-    pub common: CommonCircuitData<GoldilocksField, 2>,
-    pub secret_hash: Digest,
+    pub vd: Vec<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Committee {
     pub authorities: HashMap<PublicKey, Authority>,
     pub epoch: EpochNumber,
 }
 
 impl Committee {
-    pub fn new(info: Vec<(PublicKey, Stake, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, CommonCircuitData<GoldilocksField, 2>, Digest, SocketAddr)>, epoch: EpochNumber) -> Self {
+    pub fn new(info: Vec<(PublicKey, Stake, Vec<u8>, SocketAddr)>, epoch: EpochNumber) -> Self {
         Self {
             authorities: info
                 .into_iter()
-                .map(|(name, stake, vk, common, secret_hash, address)| {
-                    let authority = Authority { stake, address, vk, secret_hash, common};
+                .map(|(name, stake, vd, address)| {
+                    let authority = Authority { stake, address, vd };
                     (name, authority)
                 })
                 .collect(),
@@ -81,16 +80,9 @@ impl Committee {
         self.authorities.get(name).map(|x| x.address)
     }
 
-    pub fn vk(&self, name: &PublicKey) -> Option<PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData> {
-        self.authorities.get(name).map(|x| x.vk)
-    }
-
-    pub fn common(&self, name: &PublicKey) -> Option<CommonCircuitData<GoldilocksField, 2>> {
-        self.authorities.get(name).map(|x| x.common.clone())
-    }
-
-    pub fn secret_hash(&self, name: &PublicKey) -> Option<Digest> {
-        self.authorities.get(name).map(|x| x.secret_hash.clone())
+    pub fn vd(&self, name: &PublicKey) -> Option<VerifierCircuitData<GoldilocksField, PoseidonGoldilocksConfig, 2>> {
+        let vd = self.authorities.get(name).map(|x| x.vd.clone()).unwrap();
+        VerifierCircuitData::from_bytes(vd, &DefaultGateSerializer).ok()
     }
 
     pub fn broadcast_addresses(&self, myself: &PublicKey) -> Vec<(PublicKey, SocketAddr)> {

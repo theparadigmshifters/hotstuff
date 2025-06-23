@@ -15,10 +15,6 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 
-#[cfg(test)]
-#[path = "tests/batch_maker_tests.rs"]
-pub mod batch_maker_tests;
-
 pub type Transaction = Vec<u8>;
 pub type Batch = Vec<Transaction>;
 

@@ -18,6 +18,7 @@ use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholde
 use crypto::{generate_circuit, generate_keypair};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 
 // Fixture.
 pub fn keys() -> Vec<(PublicKey, SecretKey)> {
@@ -34,16 +35,11 @@ pub fn committee() -> Committee {
             .enumerate()
             .map(|(i, (name, secret))| {
                 let (circuit_data, _, _) =  generate_circuit(secret.to_field());
-                let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
-                        .verifier_only
-                        .try_into()
-                        .expect("Failed to convert circuit data to verifier only type");
-                let common = circuit_data.common;
-                let secret_hash = Digest::from_field(PoseidonHash::hash_no_pad(&secret.to_field()).elements);
+                let vd = circuit_data.verifier_data().to_bytes(&DefaultGateSerializer).unwrap();
                 let address = format!("127.0.0.1:{}", i).parse().unwrap();
                 let stake = 1;
                 println!("Authority {}: {} with address {}", i, name, address);
-                (name, stake, verifier_only, common, secret_hash, address)
+                (name, stake, vd, address)
             })
             .collect(),
         /* epoch */ 100,

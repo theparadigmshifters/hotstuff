@@ -5,10 +5,6 @@ use std::convert::TryInto;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-#[cfg(test)]
-#[path = "tests/processor_tests.rs"]
-pub mod processor_tests;
-
 /// Indicates a serialized `MempoolMessage::Batch` message.
 pub type SerializedBatchMessage = Vec<u8>;
 

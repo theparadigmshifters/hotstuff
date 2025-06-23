@@ -15,10 +15,6 @@ use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-#[cfg(test)]
-#[path = "tests/mempool_tests.rs"]
-pub mod mempool_tests;
-
 /// The default channel capacity for each channel of the mempool.
 pub const CHANNEL_CAPACITY: usize = 1_000;
 

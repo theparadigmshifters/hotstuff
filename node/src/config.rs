@@ -7,8 +7,6 @@ use std::fs::{self, OpenOptions};
 use std::io::BufWriter;
 use std::io::Write as _;
 use thiserror::Error;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
-use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -70,35 +68,10 @@ impl Secret {
 
 impl Export for Secret {}
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Committee {
     pub consensus: ConsensusCommittee,
     pub mempool: MempoolCommittee,
 }
 
-impl  Committee {
-    pub fn new(
-        mempool: MempoolCommittee,
-        consensus: ConsensusCommittee,
-    ) -> Self {
-        Self { mempool, consensus }
-    }
-
-    pub fn read(path: &str) -> Result<Self, ConfigError> {
-        Committee::read(path)
-    }
-
-    pub fn write(&self, path: &str) -> Result<(), ConfigError> {
-         let writer = || -> Result<(), std::io::Error> {
-            let file = OpenOptions::new().create(true).write(true).open(path)?;
-            let mut writer = BufWriter::new(file);
-            writer.write_all(b"\n")?;
-            Ok(())
-        };
-        writer().map_err(|e| ConfigError::WriteError {
-            file: path.to_string(),
-            message: e.to_string(),
-        })
-    }
-    
-}
+impl Export for Committee {}

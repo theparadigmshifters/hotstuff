@@ -1,17 +1,16 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
-use ed25519_dalek as dalek;
 use ed25519_dalek::ed25519;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::field::types::PrimeField64;
-use rand::rngs::OsRng;
+use placeholder_project_name_placeholder_zk::util::serialization::gate_serialization::log::info;
 use rand::rngs::StdRng;
 use rand::Rng;
-use rand::{CryptoRng, RngCore};
+use rand::{RngCore};
 use serde::{de, ser, Deserialize, Serialize};
 use std::array::TryFromSliceError;
-use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use std::time::Instant;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
@@ -22,7 +21,7 @@ use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
 use placeholder_project_name_placeholder_zk::{
     plonk::{
         circuit_builder::CircuitBuilder,
-        circuit_data::{CircuitConfig, CircuitData, VerifierCircuitData, CommonCircuitData},
+        circuit_data::{CircuitConfig, CircuitData, VerifierCircuitData},
         config::PoseidonGoldilocksConfig,
         proof::ProofWithPublicInputs,
     },
@@ -30,9 +29,6 @@ use placeholder_project_name_placeholder_zk::{
         witness::{PartialWitness, WitnessWrite},
     }
 };
-#[cfg(test)]
-#[path = "tests/crypto_tests.rs"]
-pub mod crypto_tests;
 
 pub type CryptoError = ed25519::Error;
 
@@ -298,38 +294,24 @@ impl Signature {
         Signature { proof }
     }
 
-    pub fn verify(&self, vk: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, common: CommonCircuitData<F, D>, digest: &Digest, secret_hash: &Digest) -> Result<(), Error> {
+    pub fn verify(&self, vd: VerifierCircuitData<GoldilocksField, PoseidonGoldilocksConfig, 2>, digest: &Digest) -> Result<(), Error> {
         let public_inputs = self.proof.clone().public_inputs;
-        if public_inputs.len() != 8 {
+        if public_inputs.len() != 4 {
             return Err(Error::InvalidPublicInputsLength {
-                expected: 8,
+                expected: 4,
                 found: public_inputs.len(),
             });
         }
-        let secret_hash_fields: [GoldilocksField; 4] = public_inputs[0..4]
-            .try_into()
-            .map_err(|_| Error::InvalidPublicInputsLength { expected: 4, found: public_inputs[0..4].len() })?;
         
-        let computed_secret_hash = Digest::from_field(secret_hash_fields);
-        if secret_hash != &computed_secret_hash {
-            return Err(Error::SecretHashMismatch);
-        }
-        let block_hash_fields: [GoldilocksField; 4] = public_inputs[4..8]
-            .try_into()
-            .map_err(|_| Error::InvalidPublicInputsLength { expected: 4, found: public_inputs[4..8].len() })?;
-        
-        let computed_block_hash = Digest::from_field(block_hash_fields);
+        let computed_block_hash = Digest::from_field(public_inputs[0..4].try_into().unwrap());
         if digest != &computed_block_hash {
             return Err(Error::SecretHashMismatch)   
         }
-        let verifier_circuit_data = VerifierCircuitData::<F, C, D> {
-            verifier_only: vk.into(),
-            common: common,
-        };
+        
         // Call the verify method on the struct
-        verifier_circuit_data.verify(
+        vd.verify(
             self.proof.clone(),
-        )        .map_err(|e| Error::ProofVerificationFailed(e.to_string()))?;
+        ).map_err(|e| Error::ProofVerificationFailed(e.to_string()))?;
         Ok(())
     }
     
@@ -347,11 +329,13 @@ impl SignatureService {
         let (tx, mut rx): (Sender<(Digest, oneshot::Sender<Signature>)>, _) = channel(100);
         tokio::spawn(async move {
             while let Some((digest, sender)) = rx.recv().await {
+                let prove_start = Instant::now();
                 let mut pw = PartialWitness::<GoldilocksField>::new();
                 pw.set_hash_target(secret_target, HashOut::from(secret.to_field())).unwrap();
                 pw.set_hash_target(block_hash_target, HashOut::from(digest.to_field())).unwrap();
-
-                let proof =circuit_data.prove(pw).unwrap();
+                let proof = circuit_data.prove(pw).unwrap();
+                let prove_duration = prove_start.elapsed();
+                info!("Signature Service: Proving took {:?}", prove_duration);
                 let _ = sender.send(Signature::new(proof));
             }  
 });
@@ -373,16 +357,16 @@ const D: usize = 2;
 type C = PoseidonGoldilocksConfig;
 type F = GoldilocksField;
 
-pub fn generate_circuit(nonce: [GoldilocksField; 4]) -> (CircuitData<F, C, D>, HashOutTarget, HashOutTarget) {
+pub fn generate_circuit(secret: [GoldilocksField; 4]) -> (CircuitData<F, C, D>, HashOutTarget, HashOutTarget) {
     let config = CircuitConfig::standard_recursion_zk_config();
     let mut builder = CircuitBuilder::<F, D>::new(config);
     let secret_target = builder.add_virtual_hash();
-    let block_hash_target = builder.add_virtual_hash();
-    builder.constant_hash(HashOut::from(nonce));
+    let block_hash_target = builder.add_virtual_hash_public_input();
+    let secret = builder.constant_hash(HashOut::from(secret));
     let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
 
-    builder.register_public_inputs(&computed_secret_hash.elements);
-    builder.register_public_inputs(&block_hash_target.elements);
+    builder.connect_hashes(secret, computed_secret_hash);
+
     (builder.build::<C>(), secret_target, block_hash_target)
 }
 

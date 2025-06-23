@@ -1,13 +1,11 @@
 use crate::config::Export as _;
 use crate::config::{Committee, ConfigError, Parameters, Secret};
 use consensus::{Block, Consensus};
-use crypto::{generate_production_keypair, generate_circuit, Signature, SecretKey, SignatureService};
+use crypto::{generate_circuit, SignatureService};
 use log::info;
 use mempool::Mempool;
-use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
-use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 
 /// The default channel capacity for this module.
 pub const CHANNEL_CAPACITY: usize = 1_000;
