@@ -3,11 +3,9 @@ use crate::common::{committee_with_base_port, keys};
 use crate::config::Parameters;
 use crypto::{generate_circuit, SecretKey};
 use futures::future::try_join_all;
-use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use std::fs;
 use tokio::sync::mpsc::channel;
 use tokio::task::JoinHandle;
-use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 
 fn spawn_nodes(
     keys: Vec<(PublicKey, SecretKey)>,
@@ -63,7 +61,7 @@ fn spawn_nodes(
         })
         .collect()
 }
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn end_to_end() {
     let committee = committee_with_base_port(15_000);
     env_logger::Builder::new()

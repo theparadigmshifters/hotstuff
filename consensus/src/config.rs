@@ -1,4 +1,4 @@
-use crypto::{Digest, PublicKey, SecretKey};
+use crypto::{PublicKey};
 use log::info;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;

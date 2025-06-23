@@ -102,11 +102,11 @@ pub trait Hash {
 pub struct PublicKey(pub [u8; 32]);
 
 impl PublicKey {
-    pub fn encode_base64(&self) -> String {
+    pub fn encode_base32(&self) -> String {
         base64::encode(&self.0[..])
     }
 
-    pub fn decode_base64(s: &str) -> Result<Self, base64::DecodeError> {
+    pub fn decode_base32(s: &str) -> Result<Self, base64::DecodeError> {
         let bytes = base64::decode(s)?;
         let array = bytes[..32]
             .try_into()
@@ -136,13 +136,13 @@ impl PublicKey {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.encode_base64())
+        write!(f, "{}", self.encode_base32())
     }
 }
 
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.encode_base64().get(0..16).unwrap())
+        write!(f, "{}", self.encode_base32().get(0..16).unwrap())
     }
 }
 
@@ -151,7 +151,7 @@ impl Serialize for PublicKey {
     where
         S: ser::Serializer,
     {
-        serializer.serialize_str(&self.encode_base64())
+        serializer.serialize_str(&self.encode_base32())
     }
 }
 
@@ -161,7 +161,7 @@ impl<'de> Deserialize<'de> for PublicKey {
         D: de::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let value = Self::decode_base64(&s).map_err(|e| de::Error::custom(e.to_string()))?;
+        let value = Self::decode_base32(&s).map_err(|e| de::Error::custom(e.to_string()))?;
         Ok(value)
     }
 }
@@ -177,13 +177,13 @@ impl AsRef<[u8]> for PublicKey {
 pub struct SecretKey([u8; 32]);
 
 impl SecretKey {
-    pub fn encode_base64(&self) -> String {
+    pub fn encode_base32(&self) -> String {
         base64::encode(&self.0[..])
     }
 
-    pub fn decode_base64(s: &str) -> Result<Self, base64::DecodeError> {
+    pub fn decode_base32(s: &str) -> Result<Self, base64::DecodeError> {
         let bytes = base64::decode(s)?;
-        let array = bytes[..64]
+        let array = bytes[..32]
             .try_into()
             .map_err(|_| base64::DecodeError::InvalidLength)?;
         Ok(Self(array))
@@ -215,7 +215,7 @@ impl Serialize for SecretKey {
     where
         S: ser::Serializer,
     {
-        serializer.serialize_str(&self.encode_base64())
+        serializer.serialize_str(&self.encode_base32())
     }
 }
 
@@ -225,7 +225,7 @@ impl<'de> Deserialize<'de> for SecretKey {
         D: de::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let value = Self::decode_base64(&s).map_err(|e| de::Error::custom(e.to_string()))?;
+        let value = Self::decode_base32(&s).map_err(|e| de::Error::custom(e.to_string()))?;
         Ok(value)
     }
 }
@@ -363,9 +363,9 @@ pub fn generate_circuit(secret: [GoldilocksField; 4]) -> (CircuitData<F, C, D>, 
     let secret_target = builder.add_virtual_hash();
     let block_hash_target = builder.add_virtual_hash_public_input();
     let secret = builder.constant_hash(HashOut::from(secret));
-    let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
+    // let computed_secret_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>(secret_target.elements.to_vec());
 
-    builder.connect_hashes(secret, computed_secret_hash);
+    builder.connect_hashes(secret, secret_target);
 
     (builder.build::<C>(), secret_target, block_hash_target)
 }

@@ -1,23 +1,8 @@
 use crate::config::Committee;
-use crate::consensus::Round;
-use crate::messages::{Block, Timeout, Vote, QC};
-use bytes::Bytes;
-use crypto::Hash as _;
-use crypto::{Digest, PublicKey, SecretKey, Signature};
-use futures::sink::SinkExt as _;
-use futures::stream::StreamExt as _;
-use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
+use crypto::{PublicKey, SecretKey};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng as _};
-use std::convert::TryInto;
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
-use tokio::task::JoinHandle;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use rand::{SeedableRng as _};
 use crypto::{generate_circuit, generate_keypair};
-use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
-use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 
 // Fixture.
