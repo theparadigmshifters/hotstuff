@@ -6,6 +6,7 @@ use futures::future::try_join_all;
 use std::fs;
 use tokio::sync::mpsc::channel;
 use tokio::task::JoinHandle;
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 
 fn spawn_nodes(
     keys: Vec<(PublicKey, SecretKey)>,
@@ -24,7 +25,7 @@ fn spawn_nodes(
             let _ = fs::remove_dir_all(&store_path);
             let store = Store::new(&store_path).unwrap();
            
-            let (circuit_data, secret_targets, block_hash_target) = generate_circuit(secret.to_field());
+            let (circuit_data, secret_targets, block_hash_target) = generate_circuit(PoseidonHash::hash_no_pad(&secret.to_field()));
             // Run the signature service.
             let signature_service = SignatureService::new(circuit_data, secret_targets, block_hash_target, secret);
             let (tx_consensus_to_mempool, mut rx_consensus_to_mempool) = channel(10);

@@ -2,6 +2,7 @@
 use ed25519_dalek::ed25519;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::field::types::PrimeField64;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use placeholder_project_name_placeholder_zk::util::serialization::gate_serialization::log::info;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -241,7 +242,7 @@ pub fn generate_production_keypair() -> (PublicKey, SecretKey) {
     rand::thread_rng().fill_bytes(&mut pri_key);
     let secret_key = SecretKey(pri_key);
 
-    let (circuit_data, _, _) =  generate_circuit(secret_key.to_field());
+    let (circuit_data, _, _) =  generate_circuit(PoseidonHash::hash_no_pad(&secret_key.to_field()));
     let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
         .verifier_only
         .try_into()
@@ -255,7 +256,7 @@ pub fn generate_keypair(mut rng: StdRng) -> (PublicKey, SecretKey) {
     rng.fill(&mut pri_key);
     let secret_key = SecretKey(pri_key);
 
-    let (circuit_data, _, _) =  generate_circuit(secret_key.to_field());
+    let (circuit_data, _, _) =  generate_circuit(PoseidonHash::hash_no_pad(&secret_key.to_field()));
     let verifier_only: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = circuit_data
         .verifier_only
         .try_into()

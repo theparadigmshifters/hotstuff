@@ -10,10 +10,12 @@ use env_logger::Env;
 use futures::future::join_all;
 use log::error;
 use mempool::Committee as MempoolCommittee;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use std::fs;
 use tokio::task::JoinHandle;
 use crypto::{generate_circuit};
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -126,7 +128,7 @@ fn deploy_testbed(nodes: u16) -> Result<Vec<JoinHandle<()>>, Box<dyn std::error:
             .map(|(i, key)| {
                 let name = key.name;
                 let secret = &key.secret;
-                let (circuit_data, _, _) =  generate_circuit(secret.to_field());
+                let (circuit_data, _, _) =  generate_circuit(PoseidonHash::hash_no_pad(&secret.to_field()));
                 let vd = circuit_data.verifier_data().to_bytes(&DefaultGateSerializer).unwrap();
                 let stake = 1;
                 let addresses = format!("127.0.0.1:{}", 25_200 + i).parse().unwrap();

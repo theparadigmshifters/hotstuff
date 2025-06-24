@@ -4,8 +4,10 @@ use consensus::{Block, Consensus};
 use crypto::{generate_circuit, SignatureService};
 use log::info;
 use mempool::Mempool;
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
+use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 
 /// The default channel capacity for this module.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -40,7 +42,7 @@ impl Node {
         // Make the data store.
         let store = Store::new(store_path).expect("Failed to create store");
 
-        let (circuit_data, secret_targets, block_hash_target) = generate_circuit(secret_key.to_field());
+        let (circuit_data, secret_targets, block_hash_target) = generate_circuit(PoseidonHash::hash_no_pad(&secret_key.to_field()));
         // Run the signature service.
         let signature_service = SignatureService::new(circuit_data, secret_targets, block_hash_target, secret_key);
 
