@@ -1,5 +1,6 @@
 use crate::config::Committee;
 use crypto::{PublicKey, SecretKey};
+use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use rand::rngs::StdRng;
 use rand::{SeedableRng as _};
 use crypto::{generate_circuit, generate_keypair};

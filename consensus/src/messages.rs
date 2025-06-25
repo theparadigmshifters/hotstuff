@@ -2,6 +2,7 @@ use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
 use crypto::{Digest, Hash, PublicKey, Signature, SignatureService};
+use log::info;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
@@ -207,6 +208,16 @@ impl QC {
             signature.verify(vd, &self.digest()).unwrap();
         }
         Ok(())
+    }
+    pub async fn generate_recursion_prove(&self, committee: &Committee) -> Vec<u8> {
+        let mut proof = Vec::new();
+        let mut vd = committee.vd(&self.votes[0].0).unwrap();
+        for (_, signature) in &self.votes {
+            let (verifier_data, p) = signature.recursion_prove(&vd).await.unwrap();
+            vd = verifier_data;
+            proof = p.to_bytes()
+        }
+        proof
     }
 }
 

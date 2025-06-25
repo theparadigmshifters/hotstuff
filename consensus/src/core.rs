@@ -11,7 +11,7 @@ use crate::timer::Timer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
 use crypto::Hash as _;
-use crypto::{PublicKey, SignatureService};
+use crypto::{PublicKey, SignatureService, generate_recursion_circuit};
 use log::{debug, error, info, warn};
 use network::SimpleSender;
 use std::cmp::max;
@@ -145,6 +145,9 @@ impl Core {
                 }
             }
             debug!("Committed {:?}", block);
+            if block.qc.votes.len() > 0 {
+                block.qc.generate_recursion_prove(&self.committee);
+            }
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }

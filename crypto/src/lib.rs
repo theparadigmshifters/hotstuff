@@ -18,6 +18,8 @@ use placeholder_project_name_placeholder_zk::field::goldilocks_field::Goldilocks
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputsTarget;
+use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitTarget;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
 use placeholder_project_name_placeholder_zk::{
     plonk::{
@@ -295,7 +297,11 @@ impl Signature {
         Signature { proof }
     }
 
-    pub fn verify(&self, vd: VerifierCircuitData<GoldilocksField, PoseidonGoldilocksConfig, 2>, digest: &Digest) -> Result<(), Error> {
+    pub fn proof(&self) -> &ProofWithPublicInputs<F, C, D> {
+        &self.proof
+    }
+
+    pub fn verify(&self, vd: VerifierCircuitData<F, C, D>, digest: &Digest) -> Result<(), Error> {
         let public_inputs = self.proof.clone().public_inputs;
         if public_inputs.len() != 4 {
             return Err(Error::InvalidPublicInputsLength {
@@ -314,6 +320,21 @@ impl Signature {
             self.proof.clone(),
         ).map_err(|e| Error::ProofVerificationFailed(e.to_string()))?;
         Ok(())
+    }
+
+    pub async fn recursion_prove(&self, vd: &VerifierCircuitData<F, C, D>) -> Result<(VerifierCircuitData<F, C, D>, ProofWithPublicInputs<F, C, D>), Box<dyn std::error::Error>> {
+        let proof = self.proof.clone();
+        let vd = vd.clone();
+        let handle = tokio::spawn(async move {
+            let (circuit_data, proof_target, vk_target) = generate_recursion_circuit(&vd);
+            let mut witness = PartialWitness::new();
+            witness.set_proof_with_pis_target(&proof_target, &proof).unwrap();
+            witness.set_verifier_data_target(&vk_target, &vd.verifier_only.clone()).unwrap();
+            let prove = circuit_data.prove(witness).unwrap();
+            (circuit_data.verifier_data(), prove)
+        });
+        let (circuit_data, proof) = handle.await?;
+        Ok((circuit_data, proof))
     }
     
 }
@@ -371,3 +392,10 @@ pub fn generate_circuit(secret_hash: HashOut<GoldilocksField>) -> (CircuitData<F
     (builder.build::<C>(), secret_target, block_hash_target)
 }
 
+pub fn generate_recursion_circuit(inner_data: &VerifierCircuitData<F, C, D>) -> (CircuitData<F, C, D>, ProofWithPublicInputsTarget<2>, VerifierCircuitTarget) {
+    let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
+    let proof_target = builder.add_virtual_proof_with_pis(&inner_data.common);
+    let vk_target = builder.add_virtual_verifier_data(inner_data.common.config.fri_config.cap_height);
+    builder.verify_proof::<C>(&proof_target, &vk_target, &inner_data.common);
+    (builder.build::<C>(), proof_target, vk_target)
+}
