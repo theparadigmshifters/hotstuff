@@ -1,7 +1,7 @@
 use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
-use crypto::{Digest, Hash, PublicKey, Signature, SignatureService};
+use crypto::{Digest, Hash, PublicKey, Signature, SignatureService, generate_recursion_circuit, recursion_prove};
 use log::info;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
@@ -11,6 +11,7 @@ use std::fmt;
 use std::iter::once;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::iop::witness::PartialWitness;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Block {
@@ -210,14 +211,10 @@ impl QC {
         Ok(())
     }
     pub async fn generate_recursion_prove(&self, committee: &Committee) -> Vec<u8> {
-        let mut proof = Vec::new();
-        let mut vd = committee.vd(&self.votes[0].0).unwrap();
-        for (_, signature) in &self.votes {
-            let (verifier_data, p) = signature.recursion_prove(&vd).await.unwrap();
-            vd = verifier_data;
-            proof = p.to_bytes()
-        }
-        proof
+        let vds = self.votes.iter().map(|v| committee.vd(&v.0).unwrap()).collect();
+        let (circuit_data, targets) = generate_recursion_circuit(&vds);
+        let proofs = self.votes.iter().map(|v| v.1.proof().clone()).collect::<Vec<_>>();
+        recursion_prove(circuit_data, targets, proofs).await.unwrap().to_bytes()
     }
 }
 

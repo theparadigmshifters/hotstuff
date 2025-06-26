@@ -144,10 +144,12 @@ impl Core {
                     info!("Committed {} -> {:?}", block, x);
                 }
             }
-            debug!("Committed {:?}", block);
             if block.qc.votes.len() > 0 {
-                block.qc.generate_recursion_prove(&self.committee);
+                let proof = block.qc.generate_recursion_prove(&self.committee).await;
+                info!("proof size: {}", proof.len())
             }
+            debug!("Committed {:?}", block);
+
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }

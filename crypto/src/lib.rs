@@ -19,7 +19,6 @@ use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputsTarget;
-use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitTarget;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
 use placeholder_project_name_placeholder_zk::{
     plonk::{
@@ -321,21 +320,6 @@ impl Signature {
         ).map_err(|e| Error::ProofVerificationFailed(e.to_string()))?;
         Ok(())
     }
-
-    pub async fn recursion_prove(&self, vd: &VerifierCircuitData<F, C, D>) -> Result<(VerifierCircuitData<F, C, D>, ProofWithPublicInputs<F, C, D>), Box<dyn std::error::Error>> {
-        let proof = self.proof.clone();
-        let vd = vd.clone();
-        let handle = tokio::spawn(async move {
-            let (circuit_data, proof_target, vk_target) = generate_recursion_circuit(&vd);
-            let mut witness = PartialWitness::new();
-            witness.set_proof_with_pis_target(&proof_target, &proof).unwrap();
-            witness.set_verifier_data_target(&vk_target, &vd.verifier_only.clone()).unwrap();
-            let prove = circuit_data.prove(witness).unwrap();
-            (circuit_data.verifier_data(), prove)
-        });
-        let (circuit_data, proof) = handle.await?;
-        Ok((circuit_data, proof))
-    }
     
 }
 
@@ -392,10 +376,31 @@ pub fn generate_circuit(secret_hash: HashOut<GoldilocksField>) -> (CircuitData<F
     (builder.build::<C>(), secret_target, block_hash_target)
 }
 
-pub fn generate_recursion_circuit(inner_data: &VerifierCircuitData<F, C, D>) -> (CircuitData<F, C, D>, ProofWithPublicInputsTarget<2>, VerifierCircuitTarget) {
+pub fn generate_recursion_circuit(inner_data: &Vec<VerifierCircuitData<F, C, D>>) -> (CircuitData<F, C, D>, Vec<ProofWithPublicInputsTarget<2>> ) {
     let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
-    let proof_target = builder.add_virtual_proof_with_pis(&inner_data.common);
-    let vk_target = builder.add_virtual_verifier_data(inner_data.common.config.fri_config.cap_height);
-    builder.verify_proof::<C>(&proof_target, &vk_target, &inner_data.common);
-    (builder.build::<C>(), proof_target, vk_target)
+    let mut targets: Vec<ProofWithPublicInputsTarget<2>> = Vec::new();
+    for data in inner_data.iter() {
+        let proof_target = builder.add_virtual_proof_with_pis(&data.common);
+        targets.push(proof_target.clone());
+        let vk_target = builder.constant_verifier_data(&data.verifier_only);
+        builder.register_public_inputs(&proof_target.public_inputs);
+        builder.verify_proof::<C>(&proof_target, &vk_target, &data.common);
+    }
+    (builder.build::<C>(), targets)
+}
+
+ pub async fn recursion_prove(circuit_data: CircuitData<F, C, D>, proof_target: Vec<ProofWithPublicInputsTarget<D>>, proof: Vec<ProofWithPublicInputs<F, C, D>>) -> Result<ProofWithPublicInputs<F, C, D>, Box<dyn std::error::Error>> {
+    let handle= tokio::spawn(async move {
+        let mut witness = PartialWitness::new();
+        for (i, p) in proof_target.iter().enumerate() {
+            witness.set_proof_with_pis_target(&p, &proof[i]).unwrap();
+        }
+        let prove_start = Instant::now();
+        let prove = circuit_data.prove(witness).unwrap();
+        let prove_duration = prove_start.elapsed();
+        info!("recursion_prove: Proving took {:?}", prove_duration);
+        prove
+    });
+    let proof = handle.await?;
+    Ok(proof)
 }
