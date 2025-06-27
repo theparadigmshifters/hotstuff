@@ -11,13 +11,15 @@ use crate::timer::Timer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
 use crypto::Hash as _;
-use crypto::{PublicKey, SignatureService, generate_recursion_circuit};
+use crypto::{PublicKey, SignatureService};
 use log::{debug, error, info, warn};
 use network::SimpleSender;
 use std::cmp::max;
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
+use crypto::Digest;
 
 pub struct Core {
     name: PublicKey,
@@ -83,9 +85,30 @@ impl Core {
     }
 
     async fn store_block(&mut self, block: &Block) {
+        info!("process store block...");
         let key = block.digest().to_vec();
         let value = bincode::serialize(block).expect("Failed to serialize block");
-        self.store.write(key, value).await;
+        self.store.write(key.clone(), value).await;
+
+        let prefix = "txns_hash_tail".as_bytes();
+        let hash = block.qc.hash.to_vec();
+        let mut k = Vec::with_capacity(prefix.len() + hash.len());
+        k.extend_from_slice(prefix);
+        k.extend(hash);
+        let mut v = self.store.read(k).await.expect("Failed to read store");
+        if v.is_none() {
+            v = Some(Digest::default().to_vec());
+        }
+        let v_unwrapped = v.as_ref().unwrap();
+        info!("store_block hash:{:?}, round:{:?}", v_unwrapped, block.round);
+        let value = block.txns_hash_tail(Digest(
+            v_unwrapped.clone().try_into().expect("Digest must be 32 bytes"),
+        ));
+        let key_clone = key.clone();
+        let mut k2 = Vec::with_capacity(prefix.len() + key_clone.len());
+        k2.extend_from_slice(prefix);
+        k2.extend_from_slice(&key_clone);
+        self.store.write(k2, value.to_vec()).await;
     }
 
     fn increase_last_voted_round(&mut self, target: Round) {
@@ -149,7 +172,7 @@ impl Core {
                 info!("proof size: {}", proof.len())
             }
             debug!("Committed {:?}", block);
-
+            
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }
@@ -376,6 +399,11 @@ impl Core {
             }
         );
 
+        ensure!( 
+            block.prev == self.store.get_txns_hash_tail(block.qc.clone().hash).await,
+            ConsensusError::InvalidPrev
+        );
+        
         // Check the block is correctly formed.
         block.verify(&self.committee)?;
 

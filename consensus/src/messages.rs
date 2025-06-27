@@ -2,7 +2,6 @@ use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
 use crypto::{Digest, Hash, PublicKey, Signature, SignatureService, generate_recursion_circuit, recursion_prove};
-use log::info;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
@@ -11,7 +10,6 @@ use std::fmt;
 use std::iter::once;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
-use placeholder_project_name_placeholder_zk::iop::witness::PartialWitness;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Block {
@@ -19,6 +17,7 @@ pub struct Block {
     pub tc: Option<TC>,
     pub author: PublicKey,
     pub round: Round,
+    pub prev: Digest,
     pub payload: Vec<Digest>,
     pub signature: Signature,
 }
@@ -29,6 +28,7 @@ impl Block {
         tc: Option<TC>,
         author: PublicKey,
         round: Round,
+        prev: Digest,
         payload: Vec<Digest>,
         mut signature_service: SignatureService,
     ) -> Self {
@@ -37,6 +37,7 @@ impl Block {
             tc,
             author,
             round,
+            prev,
             payload,
             signature: Signature::default(),
         };
@@ -50,6 +51,7 @@ impl Block {
             tc: Some(TC::default()),
             author: PublicKey::default(),
             round: 0,
+            prev: Digest::default(),
             payload: Vec::new(),
             signature: Signature::default(),
         }
@@ -82,14 +84,28 @@ impl Block {
         }
         Ok(())
     }
+
+    pub fn txns_hash_tail(&self, prev: Digest) -> Digest {
+        if self.payload.len() > 0 {
+            let fields: Vec<GoldilocksField> = self
+                    .payload
+                    .iter()
+                    .flat_map(|v| v.to_field())
+                    .collect();
+            let current = PoseidonHash::hash_pad(&fields);
+            return Digest::from_field(PoseidonHash::two_to_one(prev.to_field().into(), current).elements)
+        }
+        prev
+    }
 }
 
 impl Hash for Block {
     fn digest(&self) -> Digest {
+        let payload_fields: Vec<GoldilocksField> = self.payload.iter().flat_map(|x| x.to_field()).collect();
         let block_data: Vec<GoldilocksField> = self.author.to_field().iter()
             .cloned()
             .chain(once(GoldilocksField::from_canonical_u64(self.round)))
-            .chain(self.payload.iter().map(|x| GoldilocksField::from_canonical_u64(x.size() as u64)))
+            .chain(payload_fields.into_iter())
             .chain(self.qc.hash.to_field().iter().cloned())
             .collect::<Vec<_>>();
 

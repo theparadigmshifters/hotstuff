@@ -9,6 +9,7 @@ use log::{debug, info};
 use network::{CancelHandler, ReliableSender};
 use std::collections::HashSet;
 use tokio::sync::mpsc::{Receiver, Sender};
+use store::Store;
 
 #[derive(Debug)]
 pub enum ProposerMessage {
@@ -25,6 +26,7 @@ pub struct Proposer {
     tx_loopback: Sender<Block>,
     buffer: HashSet<Digest>,
     network: ReliableSender,
+    store: Store,
 }
 
 impl Proposer {
@@ -35,6 +37,7 @@ impl Proposer {
         rx_mempool: Receiver<Digest>,
         rx_message: Receiver<ProposerMessage>,
         tx_loopback: Sender<Block>,
+        store: Store,
     ) {
         tokio::spawn(async move {
             Self {
@@ -46,6 +49,7 @@ impl Proposer {
                 tx_loopback,
                 buffer: HashSet::new(),
                 network: ReliableSender::new(),
+                store,
             }
             .run()
             .await;
@@ -59,16 +63,21 @@ impl Proposer {
     }
 
     async fn make_block(&mut self, round: Round, qc: QC, tc: Option<TC>) {
+        let prev = self.store.get_txns_hash_tail(qc.clone().hash).await;
+        info!("make_block prev:{:?}", prev);
         // Generate a new block.
         let block = Block::new(
             qc,
             tc,
             self.name,
             round,
+            prev,
             /* payload */ self.buffer.drain().collect(),
             self.signature_service.clone(),
         )
         .await;
+
+        info!("make_block payload:{:?}", block.payload.len());
 
         if !block.payload.is_empty() {
             info!("Created {}", block);

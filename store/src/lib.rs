@@ -1,6 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
+use crypto::Digest;
+use std::convert::TryInto;
 
 #[cfg(test)]
 #[path = "tests/store_tests.rs"]
@@ -64,6 +66,19 @@ impl Store {
     pub async fn write(&mut self, key: Key, value: Value) {
         if let Err(e) = self.channel.send(StoreCommand::Write(key, value)).await {
             panic!("Failed to send Write command to store: {}", e);
+        }
+    }
+
+    pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
+        let prefix = "txns_hash_tail".as_bytes();
+        let mut k = Vec::with_capacity(prefix.len() + prev_block_hash.to_vec().len());
+        k.extend_from_slice(prefix);
+        k.extend(prev_block_hash.to_vec());
+        if let Some(v) = self.read(k).await.expect("Failed to read from storage") {
+            let arr: [u8; 32] = v.try_into().expect("Digest must be 32 bytes");
+            Digest(arr)
+        } else {
+            Digest([0u8; 32])
         }
     }
 
