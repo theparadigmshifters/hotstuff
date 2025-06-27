@@ -5,11 +5,7 @@ use circuit::Digest;
 use network::ReliableSender;
 use std::net::SocketAddr;
 #[cfg(feature = "benchmark")]
-use ed25519_dalek::{Digest as _, Sha512};
-#[cfg(feature = "benchmark")]
 use log::info;
-#[cfg(feature = "benchmark")]
-use std::convert::TryInto as _;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// broadcast payloads.

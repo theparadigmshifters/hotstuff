@@ -6,6 +6,7 @@ use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircui
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
+use crate::error::Error;
 use base64::{Engine as _, engine::general_purpose};
 use circuit::{Hash, Digest, ProofService};
 use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
@@ -13,6 +14,31 @@ use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderProof};
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Transaction {
+    snap: [GoldilocksField; 4],
+    from: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData,
+    to: [GoldilocksField; 4],
+    amount: GoldilocksField,
+    nonce: GoldilocksField,
+    price: GoldilocksField,
+    payload: Vec<[GoldilocksField; 8]>,
+    proof: PlaceholderProjectNamePlaceholderProof,
+}
+
+impl Transaction {
+    pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
+        let info = [self.amount, self.nonce, self.price, GoldilocksField(self.payload.len() as u64)];
+        let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
+        let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
+        [self.snap, HashOut::from(self.from).elements, self.to, info_hash]
+    }
+    pub fn hash(&self) -> [GoldilocksField; 4] { PoseidonHash::hash_no_pad(&self.public_inputs().concat()).elements }
+    pub fn verify_proof(&self) -> Result<(), Error> { VerifierCircuitData::from(self.from).verify(ProofWithPublicInputs { proof: self.proof.into(), public_inputs: self.public_inputs().concat() }).map_err(|_| Error) }    
+}
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Block {
@@ -53,6 +79,11 @@ impl Block {
         &self.qc.hash
     }
 
+    pub fn tx_tail(&self) -> Digest {
+        let tx_tail = self.payload.iter().fold(HashOut::<GoldilocksField>::default(), |x, y| PoseidonHash::two_to_one(x, y.0));
+        Digest(tx_tail)
+    }
+
     pub fn verify(&self, committee: &Committee) -> ConsensusResult<()> {
         // Ensure the authority has voting rights.
         let voting_rights = committee.stake(&self.author);
@@ -84,6 +115,7 @@ impl Hash for Block {
         elements.push(self.round.to_field());
         elements.extend_from_slice(&self.payload.iter().flat_map(|d| d.to_vec_field()).collect::<Vec<GoldilocksField>>());
         elements.extend_from_slice(&self.qc.hash.to_vec_field());
+        elements.extend_from_slice(&self.qc.tx_tail.to_vec_field());
         Digest(PoseidonHash::hash_pad(&elements))
     }
 }
@@ -112,6 +144,7 @@ impl fmt::Display for Block {
 pub struct Vote {
     pub hash: Digest,
     pub round: Round,
+    pub tx_tail: Digest,
     pub author: Digest,
     pub proof: Option<Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>>,
 }
@@ -125,6 +158,7 @@ impl Vote {
         let vote = Self {
             hash: block.digest(),
             round: block.round,
+            tx_tail: block.tx_tail(),
             author,
             proof: None,
         };
@@ -150,13 +184,14 @@ impl Hash for Vote {
         let mut elements = Vec::new();
         elements.extend_from_slice(&self.hash.to_vec_field());
         elements.push(self.round.to_field());
+        elements.extend_from_slice(&self.tx_tail.to_vec_field());
         Digest(PoseidonHash::hash_pad(&elements))
     }
 }
 
 impl fmt::Debug for Vote {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "V({}, {}, {})", self.author, self.round, self.hash)
+        write!(f, "V({}, {}, {}, {})", self.author, self.round, self.hash, self.tx_tail)
     }
 }
 
@@ -164,6 +199,7 @@ impl fmt::Debug for Vote {
 pub struct QC {
     pub hash: Digest,
     pub round: Round,
+    pub tx_tail: Digest,
     pub votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>)>,
 }
 
@@ -211,7 +247,7 @@ impl Hash for QC {
 
 impl fmt::Debug for QC {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "QC({}, {})", self.hash, self.round)
+        write!(f, "QC({}, {}, {})", self.hash, self.round, self.tx_tail)
     }
 }
 

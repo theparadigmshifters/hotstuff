@@ -8,6 +8,7 @@ use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::plonk::circuit_builder::CircuitBuilder;
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::{VerifierCircuitData, VerifierOnlyCircuitData};
 use placeholder_project_name_placeholder_zk::plonk::config::GenericHashOut;
+use placeholder_project_name_placeholder_zk::plonk::proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget};
 use base64::{Engine as _, engine::general_purpose};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
@@ -67,6 +68,38 @@ impl SecretCircuit {
 
     pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
         self.cd.verifier_data().clone()
+    }
+}
+
+pub struct AggCircuit {
+    cd: CircuitData<F, C, D>,
+    proof_with_pis_targets: Vec<ProofWithPublicInputsTarget<D>>,
+}
+
+impl AggCircuit {
+    fn build_circuit(inners: Vec<&VerifierCircuitData<F, C, D>>) -> Self {
+        let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
+        let mut proof_with_pis_targets: Vec<ProofWithPublicInputsTarget<D>> = Vec::new();
+        for inner in inners.iter() {
+            let proof_target = builder.add_virtual_proof_with_pis(&inner.common);
+            proof_with_pis_targets.push(proof_target.clone());
+            let vd_target = builder.constant_verifier_data(&inner.verifier_only);
+            builder.register_public_inputs(&proof_target.public_inputs);
+            builder.verify_proof::<C>(&proof_target, &vd_target, &inner.common);
+        }
+        let cd = builder.build::<C>();
+        Self {
+            cd,
+            proof_with_pis_targets,
+        }
+    }
+
+    pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>) -> Proof<GoldilocksField, C, 2> {
+        let mut wi = PartialWitness::<GoldilocksField>::new();
+        for (i, p) in proof_with_public_inputs.iter().enumerate() {
+            wi.set_proof_with_pis_target(&self.proof_with_pis_targets[i], &p).unwrap();
+        }
+        self.cd.prove(wi).unwrap().proof
     }
 }
 
