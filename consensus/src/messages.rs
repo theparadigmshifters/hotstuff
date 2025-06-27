@@ -1,14 +1,16 @@
 use crate::config::Committee;
 use crate::consensus::{Round, ToField};
 use crate::error::{ConsensusError, ConsensusResult};
+use log::info;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::fmt;
 use crate::error::Error;
 use base64::{Engine as _, engine::general_purpose};
-use circuit::{Hash, Digest, ProofService};
+use circuit::{AggCircuit, Digest, Hash, ProofService};
 use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
 use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
@@ -16,6 +18,26 @@ use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSer
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderProof};
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SyncBlock {
+    prev: [GoldilocksField; 4],
+    transactions: Vec<HashOut<GoldilocksField>>,
+    proof: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>,
+    //proof: PlaceholderProjectNamePlaceholderProof,
+}
+
+impl fmt::Debug for SyncBlock {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "B(prev: {:?}, tx_num: {})",
+            self.prev,
+            self.transactions.len(),
+            //&self.proof,
+        )
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Transaction {
@@ -106,6 +128,32 @@ impl Block {
         }
         Ok(())
     }
+
+    pub fn aggregated_block(&self, parent: Block, committee: &Committee) -> SyncBlock {
+        let vds = self.qc.votes
+            .iter()
+            .map(|v| {
+                let vd_encoded = committee.authorities.get(&v.0)
+                    .map(|auth| auth.vd.clone())
+                    .unwrap();
+                let vd_decoded = general_purpose::STANDARD.decode(&vd_encoded).unwrap();
+                VerifierCircuitData::from_bytes(vd_decoded, &DefaultGateSerializer).unwrap()
+            }).collect::<Vec<_>>();
+        let prev = parent.qc.tx_tail.0;
+        let transactions: Vec<HashOut<GoldilocksField>> = parent.payload.iter().map(|v| v.0).collect();
+        let agg_circuit = AggCircuit::new(vds.clone(), prev, transactions.clone());
+        let proofs_with_inputs = self.qc.votes
+            .iter()
+            .map(|(_, proof)| {
+                ProofWithPublicInputs {
+                    proof: proof.clone(),
+                    public_inputs: self.qc.digest().to_vec_field(),
+                }
+            }).collect();
+        let proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_field(), parent.qc.hash.0, parent.tx_tail().0);
+        //let proof = PlaceholderProjectNamePlaceholderProof::try_from(proof).unwrap();
+        SyncBlock { prev: prev.elements, transactions, proof }
+    }
 }
 
 impl Hash for Block {
@@ -113,10 +161,10 @@ impl Hash for Block {
         let mut elements = Vec::new();
         elements.extend_from_slice(&self.author.to_vec_field());
         elements.push(self.round.to_field());
-        elements.extend_from_slice(&self.payload.iter().flat_map(|d| d.to_vec_field()).collect::<Vec<GoldilocksField>>());
         elements.extend_from_slice(&self.qc.hash.to_vec_field());
         elements.extend_from_slice(&self.qc.tx_tail.to_vec_field());
-        Digest(PoseidonHash::hash_pad(&elements))
+        elements.extend_from_slice(&self.payload.iter().flat_map(|d| d.to_vec_field()).collect::<Vec<GoldilocksField>>());
+        Digest(PoseidonHash::hash_no_pad(&elements))
     }
 }
 
@@ -185,7 +233,7 @@ impl Hash for Vote {
         elements.extend_from_slice(&self.hash.to_vec_field());
         elements.push(self.round.to_field());
         elements.extend_from_slice(&self.tx_tail.to_vec_field());
-        Digest(PoseidonHash::hash_pad(&elements))
+        Digest(PoseidonHash::hash_no_pad(&elements))
     }
 }
 
@@ -241,7 +289,8 @@ impl Hash for QC {
         let mut elements = Vec::new();
         elements.extend_from_slice(&self.hash.to_vec_field());
         elements.push(self.round.to_field());
-        Digest(PoseidonHash::hash_pad(&elements))
+        elements.extend_from_slice(&self.tx_tail.to_vec_field());
+        Digest(PoseidonHash::hash_no_pad(&elements))
     }
 }
 
@@ -308,7 +357,7 @@ impl Hash for Timeout {
         let mut elements = Vec::new();
         elements.push(self.round.to_field());
         elements.push(self.high_qc.round.to_field());
-        Digest(PoseidonHash::hash_pad(&elements))
+        Digest(PoseidonHash::hash_no_pad(&elements))
     }
 }
 
@@ -346,7 +395,7 @@ impl TC {
             let mut elements = Vec::new();
             elements.push(self.round.to_field());
             elements.push(high_qc_round.to_field());
-            let digest = Digest(PoseidonHash::hash_pad(&elements));
+            let digest = Digest(PoseidonHash::hash_no_pad(&elements));
             verify_proof(&digest, author, committee, proof.clone());
         }
         Ok(())

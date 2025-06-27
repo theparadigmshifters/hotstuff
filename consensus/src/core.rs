@@ -144,6 +144,9 @@ impl Core {
                 }
             }
             debug!("Committed {:?}", block);
+            let parent = self.synchronizer.get_parent_block(&block).await?.expect("Parent block should exist");
+            let sync_block = block.aggregated_block(parent, &self.committee);
+            debug!("Aggregated {:?}", sync_block);
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }
@@ -409,7 +412,6 @@ impl Core {
         // Also, schedule a timer in case we don't hear from the leader.
         self.timer.reset();
         if self.name == self.leader_elector.get_leader(self.round) {
-            info!("Leader for round {}", self.round);
             self.generate_proposal(None).await;
         }
 

@@ -1,6 +1,7 @@
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::hash::hash_types::{HashOut, HashOutTarget};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
+use placeholder_project_name_placeholder_zk::iop::target::Target;
 use placeholder_project_name_placeholder_zk::iop::witness::{PartialWitness, WitnessWrite};
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::{CircuitData, CircuitConfig};
 use placeholder_project_name_placeholder_zk::plonk::config::{GenericConfig, Hasher, PoseidonGoldilocksConfig};
@@ -74,14 +75,39 @@ impl SecretCircuit {
 pub struct AggCircuit {
     cd: CircuitData<F, C, D>,
     proof_with_pis_targets: Vec<ProofWithPublicInputsTarget<D>>,
+    author_target: HashOutTarget,
+    round_target: Target,
+    pre_hash_target: HashOutTarget,
+    tail_target: HashOutTarget,
 }
 
 impl AggCircuit {
-    fn build_circuit(inners: Vec<&VerifierCircuitData<F, C, D>>) -> Self {
+    pub fn new(inners: Vec<VerifierCircuitData<F, C, D>>, pre_tail: HashOut<GoldilocksField>, payload: Vec<HashOut<GoldilocksField>>) -> Self {
         let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
         let mut proof_with_pis_targets: Vec<ProofWithPublicInputsTarget<D>> = Vec::new();
+        let author_target = builder.add_virtual_hash();
+        let round_target = builder.add_virtual_target();
+        let pre_hash_target = builder.add_virtual_hash();
+
+        let mut elements = Vec::new();
+        elements.extend_from_slice(&author_target.elements);
+        elements.push(round_target);
+        elements.extend_from_slice(&pre_hash_target.elements);
+        elements.extend_from_slice(&builder.constant_hash(pre_tail).elements);
+        for p in payload {
+            elements.extend_from_slice(&builder.constant_hash(p).elements);
+        }
+        let tail_target = builder.add_virtual_hash();
+        let msg_hash_target = builder.hash_n_to_hash_no_pad::<PoseidonHash>(elements);
+        let mut elements = Vec::new();
+        elements.extend_from_slice(&msg_hash_target.elements);
+        elements.push(round_target);
+        elements.extend_from_slice(&tail_target.elements);
+        let sign_hash_target = builder.hash_n_to_hash_no_pad::<PoseidonHash>(elements);
+
         for inner in inners.iter() {
             let proof_target = builder.add_virtual_proof_with_pis(&inner.common);
+            builder.connect_array(sign_hash_target.elements, proof_target.public_inputs.clone().try_into().unwrap());
             proof_with_pis_targets.push(proof_target.clone());
             let vd_target = builder.constant_verifier_data(&inner.verifier_only);
             builder.register_public_inputs(&proof_target.public_inputs);
@@ -91,14 +117,22 @@ impl AggCircuit {
         Self {
             cd,
             proof_with_pis_targets,
+            author_target,
+            round_target,
+            pre_hash_target,
+            tail_target,
         }
     }
 
-    pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>) -> Proof<GoldilocksField, C, 2> {
+    pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>, author: HashOut<GoldilocksField>, round: GoldilocksField, pre_hash: HashOut<GoldilocksField>, tx_tail: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
         let mut wi = PartialWitness::<GoldilocksField>::new();
         for (i, p) in proof_with_public_inputs.iter().enumerate() {
             wi.set_proof_with_pis_target(&self.proof_with_pis_targets[i], &p).unwrap();
         }
+        wi.set_hash_target(self.author_target, author).unwrap();
+        wi.set_target(self.round_target, round).unwrap();
+        wi.set_hash_target(self.pre_hash_target, pre_hash).unwrap();
+        wi.set_hash_target(self.tail_target, tx_tail).unwrap();
         self.cd.prove(wi).unwrap().proof
     }
 }

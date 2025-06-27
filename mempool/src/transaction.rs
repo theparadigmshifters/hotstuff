@@ -30,6 +30,6 @@ impl Transaction {
     }
 
     pub fn hash(&self) -> Digest {
-        Digest(PoseidonHash::hash_pad(&self.0)) //TODO: hash pad?
+        Digest(PoseidonHash::hash_no_pad(&self.0)) //TODO: hash pad?
     }
 }
