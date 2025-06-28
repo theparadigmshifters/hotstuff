@@ -1,7 +1,6 @@
 use crate::config::Committee;
 use crate::consensus::{Round, ToField};
 use crate::error::{ConsensusError, ConsensusResult};
-use log::info;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
 use serde::{Deserialize, Serialize};
@@ -149,9 +148,11 @@ impl Block {
                     proof: proof.clone(),
                     public_inputs: self.qc.digest().to_vec_field(),
                 }
-            }).collect();
+            }).collect::<Vec<_>>();
+        let all_public_inputs = proofs_with_inputs.iter().flat_map(|p| p.public_inputs.clone()).collect();
         let proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_field(), parent.qc.hash.0, parent.tx_tail().0);
         //let proof = PlaceholderProjectNamePlaceholderProof::try_from(proof).unwrap();
+        agg_circuit.vd().verify(ProofWithPublicInputs {proof: proof.clone(), public_inputs: all_public_inputs}).expect("aggregated proof verification failed");
         SyncBlock { prev: prev.elements, transactions, proof }
     }
 }

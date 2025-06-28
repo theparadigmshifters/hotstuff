@@ -135,6 +135,14 @@ impl AggCircuit {
         wi.set_hash_target(self.tail_target, tx_tail).unwrap();
         self.cd.prove(wi).unwrap().proof
     }
+
+    pub fn vk(&self) -> VerifierOnlyCircuitData<C, D> {
+        self.cd.verifier_only.clone()
+    }
+
+    pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
+        self.cd.verifier_data().clone()
+    }
 }
 
 #[derive(Clone)]
