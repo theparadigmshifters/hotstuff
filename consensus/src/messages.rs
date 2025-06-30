@@ -245,7 +245,6 @@ impl QC {
             ].into(),
             block.txns_hash().to_field().into(),
         );
-        info!("generate_recursion_prove block_hash: {:?}", block.digest());
         recursion_prove(circuit_data, targets, proof_targets, proofs, block_target).await.unwrap().to_bytes()
     }
 }
