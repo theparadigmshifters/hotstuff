@@ -81,7 +81,7 @@ impl Store {
             Digest([0u8; 32])
         }
     }
-
+    
     pub async fn read(&mut self, key: Key) -> StoreResult<Option<Value>> {
         let (sender, receiver) = oneshot::channel();
         if let Err(e) = self.channel.send(StoreCommand::Read(key, sender)).await {

@@ -1,7 +1,8 @@
 use crate::config::Committee;
 use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
-use crypto::{Digest, Hash, PublicKey, Signature, SignatureService, generate_recursion_circuit, recursion_prove};
+use crypto::{generate_recursion_circuit, recursion_prove, BlockTarget, Digest, Hash, PublicKey, Signature, SignatureService};
+use log::info;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
@@ -85,15 +86,23 @@ impl Block {
         Ok(())
     }
 
+    pub fn txns_hash(&self) -> Digest {
+        let fields: Vec<GoldilocksField> = self
+                .payload
+                .iter()
+                .flat_map(|v| v.to_field())
+                .collect();
+        Digest::from_field(PoseidonHash::hash_pad(&fields).elements)
+    }
+
+    pub fn prev(&self) -> Digest {
+        self.prev.clone()
+    }
+
     pub fn txns_hash_tail(&self, prev: Digest) -> Digest {
         if self.payload.len() > 0 {
-            let fields: Vec<GoldilocksField> = self
-                    .payload
-                    .iter()
-                    .flat_map(|v| v.to_field())
-                    .collect();
-            let current = PoseidonHash::hash_pad(&fields);
-            return Digest::from_field(PoseidonHash::two_to_one(prev.to_field().into(), current).elements)
+            let current = self.txns_hash();
+            return Digest::from_field(PoseidonHash::two_to_one(prev.to_field().into(), current.to_field().into()).elements)
         }
         prev
     }
@@ -101,16 +110,12 @@ impl Block {
 
 impl Hash for Block {
     fn digest(&self) -> Digest {
-        let payload_fields: Vec<GoldilocksField> = self.payload.iter().flat_map(|x| x.to_field()).collect();
-        let block_data: Vec<GoldilocksField> = self.author.to_field().iter()
-            .cloned()
-            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
-            .chain(payload_fields.into_iter())
-            .chain(self.qc.hash.to_field().iter().cloned())
-            .collect::<Vec<_>>();
-
-        let block_hash = PoseidonHash::hash_pad(&block_data);
-        Digest::from_field(block_hash.elements)
+        let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0), GoldilocksField(0)].into();
+        let h1= PoseidonHash::two_to_one(self.author.to_field().into(), round_hash);
+        let h2 = PoseidonHash::two_to_one(self.prev.to_field().into(), self.txns_hash().to_field().into());
+        let h3 = PoseidonHash::two_to_one(h1, h2);
+        let h4 = PoseidonHash::two_to_one(h3, self.qc.hash.to_field().into());
+        Digest::from_field(h4.elements)
     }
 }
 
@@ -173,11 +178,9 @@ impl Vote {
 
 impl Hash for Vote {
     fn digest(&self) -> Digest {
-        let vote_data = self.hash.to_field().iter()
-            .cloned()
-            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
-            .collect::<Vec<_>>();
-        Digest::from_field(PoseidonHash::hash_pad(&vote_data).elements)
+        let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0),GoldilocksField(0)].into();
+        let h = PoseidonHash::two_to_one(self.hash.to_field().into(), round_hash);
+        Digest::from_field(h.elements)
     }
 }
 
@@ -226,21 +229,32 @@ impl QC {
         }
         Ok(())
     }
-    pub async fn generate_recursion_prove(&self, committee: &Committee) -> Vec<u8> {
+    pub async fn generate_recursion_prove(&self, committee: &Committee, block: &Block) -> Vec<u8> {
         let vds = self.votes.iter().map(|v| committee.vd(&v.0).unwrap()).collect();
-        let (circuit_data, targets) = generate_recursion_circuit(&vds);
+        let (circuit_data, targets, proof_targets) = generate_recursion_circuit(&vds);
         let proofs = self.votes.iter().map(|v| v.1.proof().clone()).collect::<Vec<_>>();
-        recursion_prove(circuit_data, targets, proofs).await.unwrap().to_bytes()
+        let block_target = BlockTarget::new(
+            block.author.to_field().into(),
+            block.qc.hash.to_field().into(),
+            block.prev().to_field().into(),
+            [
+                GoldilocksField::from_canonical_u64(block.round),
+                GoldilocksField(0),
+                GoldilocksField(0),
+                GoldilocksField(0),
+            ].into(),
+            block.txns_hash().to_field().into(),
+        );
+        info!("generate_recursion_prove block_hash: {:?}", block.digest());
+        recursion_prove(circuit_data, targets, proof_targets, proofs, block_target).await.unwrap().to_bytes()
     }
 }
 
 impl Hash for QC {
     fn digest(&self) -> Digest {
-        let qc_data: Vec<GoldilocksField> = self.hash.to_field().iter()
-            .cloned()
-            .chain(once(GoldilocksField::from_canonical_u64(self.round)))
-            .collect::<Vec<_>>();
-        Digest::from_field(PoseidonHash::hash_pad(&qc_data).elements)
+        let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0),GoldilocksField(0)].into();
+        let h = PoseidonHash::two_to_one(self.hash.to_field().into(), round_hash);
+        Digest::from_field(h.elements)
     }
 }
 
@@ -308,7 +322,7 @@ impl Hash for Timeout {
         let data: Vec<GoldilocksField> = once(GoldilocksField::from_canonical_u64(self.round))
             .chain(once(GoldilocksField::from_canonical_u64(self.high_qc.round)))
             .collect();
-        let hash_out = PoseidonHash::hash_pad(&data).elements;
+        let hash_out = PoseidonHash::hash_no_pad(&data).elements;
         Digest::from_field(hash_out)
     }
 }
@@ -345,7 +359,7 @@ impl TC {
         // Check the signatures.
         for (author, signature, high_qc_round) in &self.votes {
             let digest = Digest::from_field(
-                PoseidonHash::hash_pad(
+                PoseidonHash::hash_no_pad(
                     &once(GoldilocksField::from_canonical_u64(self.round))
                         .chain(once(GoldilocksField::from_canonical_u64(*high_qc_round)))
                         .collect::<Vec<_>>()

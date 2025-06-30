@@ -22,7 +22,7 @@ use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
 use placeholder_project_name_placeholder_zk::{
     plonk::{
-        circuit_builder::CircuitBuilder,
+        circuit_builder::{CircuitBuilder},
         circuit_data::{CircuitConfig, CircuitData, VerifierCircuitData},
         config::PoseidonGoldilocksConfig,
         proof::ProofWithPublicInputs,
@@ -376,23 +376,71 @@ pub fn generate_circuit(secret_hash: HashOut<GoldilocksField>) -> (CircuitData<F
     (builder.build::<C>(), secret_target, block_hash_target)
 }
 
-pub fn generate_recursion_circuit(inner_data: &Vec<VerifierCircuitData<F, C, D>>) -> (CircuitData<F, C, D>, Vec<ProofWithPublicInputsTarget<2>> ) {
+pub fn generate_recursion_circuit(inner_data: &Vec<VerifierCircuitData<F, C, D>>) -> (CircuitData<F, C, D>, Vec<HashOutTarget>, Vec<ProofWithPublicInputsTarget<D>>) {
     let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
-    let mut targets: Vec<ProofWithPublicInputsTarget<2>> = Vec::new();
+    let mut targets: Vec<HashOutTarget> = Vec::new();
+    let mut proof_targets: Vec<ProofWithPublicInputsTarget<D>> = Vec::new();
+
+    let author_target = builder.add_virtual_hash();
+    targets.push(author_target);
+    let qc_target = builder.add_virtual_hash();
+    targets.push(qc_target);
+    let prev_target = builder.add_virtual_hash_public_input();
+    targets.push(prev_target);
+    let round_target = builder.add_virtual_hash();
+    targets.push(round_target);
+    let txns_target = builder.add_virtual_hash_public_input();
+    targets.push(txns_target);
+
+    let h1 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([author_target.elements, round_target.elements].concat());
+    let h2 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([prev_target.elements, txns_target.elements].concat());
+    let h3 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h1.elements, h2.elements].concat());
+    let block_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h3.elements, qc_target.elements].concat());
+
+    let vote_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([block_hash.elements, round_target.elements].concat());
+
     for data in inner_data.iter() {
         let proof_target = builder.add_virtual_proof_with_pis(&data.common);
-        targets.push(proof_target.clone());
+        proof_targets.push(proof_target.clone());
         let vk_target = builder.constant_verifier_data(&data.verifier_only);
-        builder.register_public_inputs(&proof_target.public_inputs);
         builder.verify_proof::<C>(&proof_target, &vk_target, &data.common);
+        assert_eq!(proof_target.public_inputs.len(), 4, "proof_target.public_inputs must have length 4");
+        builder.connect_hashes(vote_hash, HashOutTarget::from_vec(proof_target.public_inputs));
     }
-    (builder.build::<C>(), targets)
+
+    (builder.build::<C>(), targets, proof_targets)
 }
 
- pub async fn recursion_prove(circuit_data: CircuitData<F, C, D>, proof_target: Vec<ProofWithPublicInputsTarget<D>>, proof: Vec<ProofWithPublicInputs<F, C, D>>) -> Result<ProofWithPublicInputs<F, C, D>, Box<dyn std::error::Error>> {
+pub struct BlockTarget {
+    author_target: HashOut<GoldilocksField>,
+    qc_target: HashOut<GoldilocksField>,
+    prev_target: HashOut<GoldilocksField>,
+    round_target: HashOut<GoldilocksField>,
+    txns_target: HashOut<GoldilocksField>,
+}
+
+impl BlockTarget {
+    pub fn new(author_target: HashOut<GoldilocksField>, qc_target: HashOut<GoldilocksField>, prev_target: HashOut<GoldilocksField>, round_target: HashOut<GoldilocksField>, txns_target: HashOut<GoldilocksField>) -> Self {
+        BlockTarget{
+            author_target,
+            qc_target,
+            prev_target,
+            round_target,
+            txns_target,
+        }
+    }
+}
+
+ pub async fn recursion_prove(circuit_data: CircuitData<F, C, D>, targets: Vec<HashOutTarget>, proof_target: Vec<ProofWithPublicInputsTarget<D>>, proof: Vec<ProofWithPublicInputs<F, C, D>>, block: BlockTarget) -> Result<ProofWithPublicInputs<F, C, D>, Box<dyn std::error::Error>> {
     let handle= tokio::spawn(async move {
         let mut witness = PartialWitness::new();
-        for (i, p) in proof_target.iter().enumerate() {
+        witness.set_hash_target(targets[0], block.author_target).unwrap();
+        witness.set_hash_target(targets[1], block.qc_target).unwrap();
+        witness.set_hash_target(targets[2], block.prev_target).unwrap();
+        witness.set_hash_target(targets[3], block.round_target).unwrap();
+        witness.set_hash_target(targets[4], block.txns_target).unwrap();
+
+        for (i, p) in proof_target.iter().enumerate(){
             witness.set_proof_with_pis_target(&p, &proof[i]).unwrap();
         }
         let prove_start = Instant::now();

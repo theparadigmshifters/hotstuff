@@ -84,6 +84,11 @@ impl Core {
         });
     }
 
+    async fn get_block(&mut self, block_hash: Digest) -> Block {
+        let block_bytes = self.store.read(block_hash.to_vec()).await.unwrap();
+        bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block")
+    }
+
     async fn store_block(&mut self, block: &Block) {
         info!("process store block...");
         let key = block.digest().to_vec();
@@ -168,7 +173,8 @@ impl Core {
                 }
             }
             if block.qc.votes.len() > 0 {
-                let proof = block.qc.generate_recursion_prove(&self.committee).await;
+                let prev_block = self.get_block(block.clone().qc.hash).await;
+                let proof = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
                 info!("proof size: {}", proof.len())
             }
             debug!("Committed {:?}", block);
