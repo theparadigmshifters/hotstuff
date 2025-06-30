@@ -1,7 +1,6 @@
 use circuit::Digest;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
-
 use crate::transaction::Transaction;
 
 pub struct Processor;
@@ -18,7 +17,7 @@ impl Processor {
         tokio::spawn(async move {
             while let Some(tx) = rx_transaction.recv().await {
                 // Hash the transaction.
-                let digest = tx.hash();
+                let digest = Digest(tx.hash());
 
                 // Store the transaction.
                 store.write(digest.to_vec(), tx.to_bytes()).await;

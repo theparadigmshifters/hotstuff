@@ -5,9 +5,7 @@ use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::fmt;
-use crate::error::Error;
 use base64::{Engine as _, engine::general_purpose};
 use circuit::{AggCircuit, Digest, Hash, ProofService};
 use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
@@ -15,15 +13,14 @@ use placeholder_project_name_placeholder_zk::plonk::proof::Proof;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderProof};
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SyncBlock {
-    prev: [GoldilocksField; 4],
-    transactions: Vec<HashOut<GoldilocksField>>,
-    proof: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>,
-    //proof: PlaceholderProjectNamePlaceholderProof,
+    pub prev: [GoldilocksField; 4],
+    pub transactions: Vec<HashOut<GoldilocksField>>,
+    pub proof: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>,
+    //pub proof: PlaceholderProjectNamePlaceholderProof,
 }
 
 impl fmt::Debug for SyncBlock {
@@ -36,29 +33,6 @@ impl fmt::Debug for SyncBlock {
             //&self.proof,
         )
     }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Transaction {
-    snap: [GoldilocksField; 4],
-    from: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData,
-    to: [GoldilocksField; 4],
-    amount: GoldilocksField,
-    nonce: GoldilocksField,
-    price: GoldilocksField,
-    payload: Vec<[GoldilocksField; 8]>,
-    proof: PlaceholderProjectNamePlaceholderProof,
-}
-
-impl Transaction {
-    pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
-        let info = [self.amount, self.nonce, self.price, GoldilocksField(self.payload.len() as u64)];
-        let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
-        let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
-        [self.snap, HashOut::from(self.from).elements, self.to, info_hash]
-    }
-    pub fn hash(&self) -> [GoldilocksField; 4] { PoseidonHash::hash_no_pad(&self.public_inputs().concat()).elements }
-    pub fn verify_proof(&self) -> Result<(), Error> { VerifierCircuitData::from(self.from).verify(ProofWithPublicInputs { proof: self.proof.into(), public_inputs: self.public_inputs().concat() }).map_err(|_| Error) }    
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]

@@ -1,16 +1,20 @@
 use anyhow::{Context, Result};
-use bytes::BufMut as _;
-use bytes::BytesMut;
+use bytes::Bytes;
 use clap::Parser;
 use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
 use log::{info, warn};
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::field::types::Field;
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData};
 use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use mempool::Transaction;
 
 #[derive(Parser)]
 #[clap(
@@ -90,7 +94,6 @@ impl Client {
 
         // Submit all transactions.
         let burst = self.rate / PRECISION;
-        let mut tx = BytesMut::with_capacity(self.size);
         let mut counter = 0;
         let mut r = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
@@ -105,22 +108,20 @@ impl Client {
             let now = Instant::now();
 
             for x in 0..burst {
-                if x == counter % burst {
-                    // NOTE: This log entry is used to compute performance.
-                    info!("Sending sample transaction {}", counter);
-
-                    tx.put_u8(0u8); // Sample txs start with 0.
-                    tx.put_u64(counter); // This counter identifies the tx.
-                } else {
-                    r += 1;
-
-                    tx.put_u8(1u8); // Standard txs start with 1.
-                    tx.put_u64(r); // Ensures all clients send different txs.
-                };
-                tx.resize(self.size, 0u8);
-                let bytes = tx.split().freeze();
-
-                if let Err(e) = transport.send(bytes).await {
+                let tx = Transaction::new(
+                    HashOut::default().elements,
+                    PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::from([GoldilocksField::ZERO; 68]),
+                    HashOut::default().elements,
+                    GoldilocksField(0),
+                    GoldilocksField(r),
+                    GoldilocksField(0),
+                    vec![[GoldilocksField::ZERO; 8]; 9],
+                    PlaceholderProjectNamePlaceholderProof::from([GoldilocksField::ZERO; 16581]),
+                );
+                r = r + 1;
+                info!("Sending transaction {}, {}", x, r);
+                
+                if let Err(e) = transport.send(Bytes::from(tx.to_bytes())).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
