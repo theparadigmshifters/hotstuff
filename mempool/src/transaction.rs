@@ -5,6 +5,8 @@ use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderProof};
 use serde::{Deserialize, Serialize};
 
+pub type SerializedTransaction = Vec<u8>;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Transaction {
     pub snap: [GoldilocksField; 4],

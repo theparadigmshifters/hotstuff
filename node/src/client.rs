@@ -115,7 +115,7 @@ impl Client {
                     GoldilocksField(0),
                     GoldilocksField(r),
                     GoldilocksField(0),
-                    vec![[GoldilocksField::ZERO; 8]; 9],
+                    vec![[GoldilocksField::ZERO; 8]; 4],
                     PlaceholderProjectNamePlaceholderProof::from([GoldilocksField::ZERO; 16581]),
                 );
                 r = r + 1;

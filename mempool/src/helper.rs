@@ -1,4 +1,4 @@
-use crate::config::Committee;
+use crate::{config::Committee, mempool::MempoolMessage};
 use bytes::Bytes;
 use circuit::Digest;
 use log::{error, warn};
@@ -52,7 +52,11 @@ impl Helper {
             // Reply to the request (the best we can).
             for digest in digests {
                 match self.store.read(digest.to_vec()).await {
-                    Ok(Some(data)) => self.network.send(address, Bytes::from(data)).await,
+                    Ok(Some(data)) => {
+                        let message = MempoolMessage::Transaction(data);
+                        let serialized = bincode::serialize(&message).expect("Failed to serialize our stored transaction");
+                        self.network.send(address, Bytes::from(serialized)).await
+                    },
                     Ok(None) => (),
                     Err(e) => error!("{}", e),
                 }

@@ -114,7 +114,7 @@ impl Block {
             }).collect::<Vec<_>>();
         let prev = parent.qc.tx_tail.0;
         let transactions: Vec<HashOut<GoldilocksField>> = parent.payload.iter().map(|v| v.0).collect();
-        let agg_circuit = AggCircuit::new(vds.clone(), prev, transactions.clone());
+        let agg_circuit = AggCircuit::new(vds.clone());
         let proofs_with_inputs = self.qc.votes
             .iter()
             .map(|(_, proof)| {
@@ -123,10 +123,9 @@ impl Block {
                     public_inputs: self.qc.digest().to_vec_field(),
                 }
             }).collect::<Vec<_>>();
-        let all_public_inputs = proofs_with_inputs.iter().flat_map(|p| p.public_inputs.clone()).collect();
-        let proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_field(), parent.qc.hash.0, parent.tx_tail().0);
+        let proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_field(), parent.qc.hash.0, prev, parent.tx_tail().0);
         //let proof = PlaceholderProjectNamePlaceholderProof::try_from(proof).unwrap();
-        agg_circuit.vd().verify(ProofWithPublicInputs {proof: proof.clone(), public_inputs: all_public_inputs}).expect("aggregated proof verification failed");
+        agg_circuit.vd().verify(ProofWithPublicInputs {proof: proof.clone(), public_inputs: [prev.elements, parent.tx_tail().0.elements].concat()}).expect("aggregated proof verification failed");
         SyncBlock { prev: prev.elements, transactions, proof }
     }
 }
@@ -138,7 +137,8 @@ impl Hash for Block {
         elements.push(self.round.to_field());
         elements.extend_from_slice(&self.qc.hash.to_vec_field());
         elements.extend_from_slice(&self.qc.tx_tail.to_vec_field());
-        elements.extend_from_slice(&self.payload.iter().flat_map(|d| d.to_vec_field()).collect::<Vec<GoldilocksField>>());
+        let tx_tail = self.payload.iter().fold(HashOut::default(), |x, y| PoseidonHash::two_to_one(x, y.0));
+        elements.extend_from_slice(&tx_tail.elements);
         Digest(PoseidonHash::hash_no_pad(&elements))
     }
 }

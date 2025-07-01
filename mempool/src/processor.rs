@@ -1,7 +1,7 @@
 use circuit::Digest;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
-use crate::transaction::Transaction;
+use crate::{transaction::SerializedTransaction, Transaction};
 
 pub struct Processor;
 
@@ -10,12 +10,13 @@ impl Processor {
         // The persistent storage.
         mut store: Store,
         // Input channel to receive batches.
-        mut rx_transaction: Receiver<Transaction>,
+        mut rx_transaction: Receiver<SerializedTransaction>,
         // Output channel to send out batches' digests.
         tx_digest: Sender<Digest>,
     ) {
         tokio::spawn(async move {
-            while let Some(tx) = rx_transaction.recv().await {
+            while let Some(tx_bytes) = rx_transaction.recv().await {
+                let tx = Transaction::from_bytes(&tx_bytes);
                 // Hash the transaction.
                 let digest = Digest(tx.hash());
 

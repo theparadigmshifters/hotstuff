@@ -3,7 +3,7 @@ use crate::helper::Helper;
 use crate::processor::Processor;
 use crate::quorum_waiter::QuorumWaiter;
 use crate::synchronizer::Synchronizer;
-use crate::transaction::Transaction;
+use crate::transaction::SerializedTransaction;
 use crate::tx_broadcaster::PayloadBroadcaster;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -25,7 +25,7 @@ pub type Round = u64;
 /// The message exchanged between the nodes' mempool.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MempoolMessage {
-    Transaction(Transaction),
+    Transaction(SerializedTransaction),
     TransactionRequest(Vec<Digest>, /* origin */ Digest),
 }
 
@@ -190,7 +190,7 @@ impl Mempool {
 /// Defines how the network receiver handles incoming transactions.
 #[derive(Clone)]
 struct TxReceiverHandler {
-    tx_transaction_broadcaster: Sender<Transaction>,
+    tx_transaction_broadcaster: Sender<SerializedTransaction>,
 }
 
 #[async_trait]
@@ -198,7 +198,7 @@ impl MessageHandler for TxReceiverHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
         // Send the transaction to transaction_broadcaster.
         self.tx_transaction_broadcaster
-            .send(Transaction::from_bytes(&message.to_vec()))
+            .send(message.to_vec())
             .await
             .expect("Failed to send transaction");
 
@@ -212,7 +212,7 @@ impl MessageHandler for TxReceiverHandler {
 #[derive(Clone)]
 struct MempoolReceiverHandler {
     tx_helper: Sender<(Vec<Digest>, Digest)>,
-    tx_processor: Sender<Transaction>,
+    tx_processor: Sender<SerializedTransaction>,
 }
 
 #[async_trait]

@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::config::{Committee, Stake};
-use crate::transaction::Transaction;
+use crate::transaction::SerializedTransaction;
 use circuit::Digest;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
@@ -18,7 +18,7 @@ const DISSEMINATION_QUEUE_MAX: usize = 10_000;
 #[derive(Debug)]
 pub struct QuorumWaiterMessage {
     /// A serialized `MempoolMessage::Batch` message.
-    pub transaction: Transaction,
+    pub transaction: SerializedTransaction,
     /// The cancel handlers to receive the acknowledgements of our broadcast.
     pub handlers: Vec<(Digest, CancelHandler)>,
 }
@@ -32,7 +32,7 @@ pub struct QuorumWaiter {
     /// Input Channel to receive commands.
     rx_message: Receiver<QuorumWaiterMessage>,
     /// Channel to deliver transaction for which we have enough acknowledgements.
-    tx_transaction: Sender<Transaction>,
+    tx_transaction: Sender<SerializedTransaction>,
 }
 
 impl QuorumWaiter {
@@ -41,7 +41,7 @@ impl QuorumWaiter {
         committee: Committee,
         stake: Stake,
         rx_message: Receiver<QuorumWaiterMessage>,
-        tx_transaction: Sender<Transaction>,
+        tx_transaction: Sender<SerializedTransaction>,
     ) {
         tokio::spawn(async move {
             Self {

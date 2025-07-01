@@ -78,31 +78,34 @@ pub struct AggCircuit {
     author_target: HashOutTarget,
     round_target: Target,
     pre_hash_target: HashOutTarget,
-    tail_target: HashOutTarget,
+    pre_tail_target: HashOutTarget,
+    tx_tail_target: HashOutTarget,
 }
 
 impl AggCircuit {
-    pub fn new(inners: Vec<VerifierCircuitData<F, C, D>>, pre_tail: HashOut<GoldilocksField>, payload: Vec<HashOut<GoldilocksField>>) -> Self {
+    pub fn new(inners: Vec<VerifierCircuitData<F, C, D>>) -> Self {
         let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
         let mut proof_with_pis_targets: Vec<ProofWithPublicInputsTarget<D>> = Vec::new();
+        // private input
         let author_target = builder.add_virtual_hash();
         let round_target = builder.add_virtual_target();
         let pre_hash_target = builder.add_virtual_hash();
+        // public input
+        let pre_tail_target = builder.add_virtual_hash_public_input();
+        let tx_tail_target = builder.add_virtual_hash_public_input();
 
         let mut elements = Vec::new();
         elements.extend_from_slice(&author_target.elements);
         elements.push(round_target);
         elements.extend_from_slice(&pre_hash_target.elements);
-        elements.extend_from_slice(&builder.constant_hash(pre_tail).elements);
-        for p in payload {
-            elements.extend_from_slice(&builder.constant_hash(p).elements);
-        }
-        let tail_target = builder.add_virtual_hash();
+        elements.extend_from_slice(&pre_tail_target.elements);
+        elements.extend_from_slice(&tx_tail_target.elements);
+
         let msg_hash_target = builder.hash_n_to_hash_no_pad::<PoseidonHash>(elements);
         let mut elements = Vec::new();
         elements.extend_from_slice(&msg_hash_target.elements);
         elements.push(round_target);
-        elements.extend_from_slice(&tail_target.elements);
+        elements.extend_from_slice(&tx_tail_target.elements);
         let sign_hash_target = builder.hash_n_to_hash_no_pad::<PoseidonHash>(elements);
 
         for inner in inners.iter() {
@@ -110,7 +113,6 @@ impl AggCircuit {
             builder.connect_array(sign_hash_target.elements, proof_target.public_inputs.clone().try_into().unwrap());
             proof_with_pis_targets.push(proof_target.clone());
             let vd_target = builder.constant_verifier_data(&inner.verifier_only);
-            builder.register_public_inputs(&proof_target.public_inputs);
             builder.verify_proof::<C>(&proof_target, &vd_target, &inner.common);
         }
         let cd = builder.build::<C>();
@@ -120,11 +122,13 @@ impl AggCircuit {
             author_target,
             round_target,
             pre_hash_target,
-            tail_target,
+            pre_tail_target,
+            tx_tail_target,
         }
     }
 
-    pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>, author: HashOut<GoldilocksField>, round: GoldilocksField, pre_hash: HashOut<GoldilocksField>, tx_tail: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
+    pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>, author: HashOut<GoldilocksField>, round: GoldilocksField, pre_hash: HashOut<GoldilocksField>, 
+        prev_tail: HashOut<GoldilocksField>, tx_tail: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
         let mut wi = PartialWitness::<GoldilocksField>::new();
         for (i, p) in proof_with_public_inputs.iter().enumerate() {
             wi.set_proof_with_pis_target(&self.proof_with_pis_targets[i], &p).unwrap();
@@ -132,7 +136,8 @@ impl AggCircuit {
         wi.set_hash_target(self.author_target, author).unwrap();
         wi.set_target(self.round_target, round).unwrap();
         wi.set_hash_target(self.pre_hash_target, pre_hash).unwrap();
-        wi.set_hash_target(self.tail_target, tx_tail).unwrap();
+        wi.set_hash_target(self.pre_tail_target, prev_tail).unwrap();
+        wi.set_hash_target(self.tx_tail_target, tx_tail).unwrap();
         self.cd.prove(wi).unwrap().proof
     }
 
