@@ -175,7 +175,6 @@ impl Core {
             if block.qc.votes.len() > 0 {
                 let prev_block = self.get_block(block.clone().qc.hash).await;
                 let proof = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
-                info!("proof size: {}", proof.len())
             }
             debug!("Committed {:?}", block);
             

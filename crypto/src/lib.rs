@@ -11,6 +11,7 @@ use serde::{de, ser, Deserialize, Serialize};
 use std::array::TryFromSliceError;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use std::fmt::Debug;
 use std::time::Instant;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
@@ -19,6 +20,8 @@ use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputsTarget;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderProof;
+
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOutTarget;
 use placeholder_project_name_placeholder_zk::{
     plonk::{
@@ -408,6 +411,9 @@ pub fn generate_recursion_circuit(inner_data: &Vec<VerifierCircuitData<F, C, D>>
         builder.connect_hashes(vote_hash, HashOutTarget::from_vec(proof_target.public_inputs));
     }
 
+    let zero = builder.constant_hash([GoldilocksField(0); 4].into());
+    builder.register_public_inputs(&[zero.elements, zero.elements].concat());
+
     (builder.build::<C>(), targets, proof_targets)
 }
 
@@ -451,4 +457,18 @@ impl BlockTarget {
     });
     let proof = handle.await?;
     Ok(proof)
+}
+
+pub async fn convert_to_placeholder_proof(inner_data: &VerifierCircuitData<F, C, D>, proof: ProofWithPublicInputs<F, C, D>,) -> (VerifierCircuitData<F, C, D>, PlaceholderProjectNamePlaceholderProof) {
+    let mut builder = CircuitBuilder::new(CircuitConfig::standard_recursion_config());
+    let t = builder.add_virtual_proof_with_pis(&inner_data.common);
+    let inner_verifier_data = builder.constant_verifier_data(&inner_data.verifier_only);
+    builder.register_public_inputs(&t.public_inputs);
+    builder.verify_proof::<PoseidonGoldilocksConfig>(&t, &inner_verifier_data, &inner_data.common);
+    let circuit_data = builder.build::<PoseidonGoldilocksConfig>();
+    
+    let mut witness = PartialWitness::new();
+    witness.set_proof_with_pis_target(&t, &proof).unwrap();
+    let proof = circuit_data.prove(witness).unwrap().proof.try_into().unwrap();
+    (circuit_data.verifier_data(), proof)
 }
