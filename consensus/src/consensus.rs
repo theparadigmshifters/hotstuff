@@ -16,6 +16,7 @@ use mempool::ConsensusMempoolMessage;
 use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::field::types::{Field, Field64};
+use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
@@ -35,6 +36,16 @@ impl ToField for u64 {
     fn to_field(&self) -> GoldilocksField {
         assert!(*self <= GoldilocksField::ORDER);
         GoldilocksField::from_canonical_u64(*self)
+    }
+}
+
+pub trait ToHash {
+    fn to_hash(&self) -> HashOut<GoldilocksField>;
+}
+
+impl ToHash for u64 {
+    fn to_hash(&self) -> HashOut<GoldilocksField> {
+        HashOut::from_vec([self.to_field(), GoldilocksField(0), GoldilocksField(0), GoldilocksField(0)].to_vec())
     }
 }
 

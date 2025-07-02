@@ -1,12 +1,11 @@
-use crate::{mempool::MempoolMessage, transaction::{Transaction, SerializedTransaction}};
+use crate::{mempool::MempoolMessage, transaction::SerializedTransaction};
 use crate::quorum_waiter::QuorumWaiterMessage;
 use bytes::Bytes;
 use circuit::Digest;
-use log::info;
 use network::ReliableSender;
 use std::net::SocketAddr;
-// #[cfg(feature = "benchmark")]
-// use log::info;
+#[cfg(feature = "benchmark")]
+use log::info;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// broadcast payloads.
