@@ -6,6 +6,8 @@ use network::ReliableSender;
 use std::net::SocketAddr;
 #[cfg(feature = "benchmark")]
 use log::info;
+#[cfg(feature = "benchmark")]
+use crate::transaction::Transaction;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// broadcast payloads.

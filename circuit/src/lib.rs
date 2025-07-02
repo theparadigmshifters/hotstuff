@@ -76,9 +76,7 @@ impl SecretCircuit {
 
 pub struct AggCircuit {
     ci: CircuitData<F, C, D>,
-    co: CircuitData<F, C, D>,
     proof_with_public_inputs: Vec<ProofWithPublicInputsTarget<D>>,
-    proof_with_pis_target: ProofWithPublicInputsTarget<D>,
     author_target: HashOutTarget,
     round_target: HashOutTarget,
     pre_hash_target: HashOutTarget,
@@ -88,7 +86,7 @@ pub struct AggCircuit {
 
 impl AggCircuit {
     pub fn new(inners: Vec<VerifierCircuitData<F, C, D>>) -> Self {
-        let mut bi = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
+        let mut bi = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_zk_config());
         let mut proof_with_public_inputs: Vec<ProofWithPublicInputsTarget<D>> = Vec::new();
         // private input
         let author_target = bi.add_virtual_hash();
@@ -114,17 +112,9 @@ impl AggCircuit {
             bi.verify_proof::<C>(&proof_target, &vd_target, &inner.common);
         }
         let ci = bi.build::<C>();
-        let mut bo = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
-        let proof_with_pis_target = bo.add_virtual_proof_with_pis(&ci.common);
-        let inner_verifier_data = bo.constant_verifier_data(&ci.verifier_only);
-        bo.register_public_inputs(&proof_with_pis_target.public_inputs);
-        bo.verify_proof::<C>(&proof_with_pis_target, &inner_verifier_data, &ci.common);
-        let co = bo.build::<C>();
         Self {
             ci,
-            co,
             proof_with_public_inputs,
-            proof_with_pis_target,
             author_target,
             round_target,
             pre_hash_target,
@@ -144,6 +134,58 @@ impl AggCircuit {
         wi.set_hash_target(self.pre_hash_target, pre_hash).unwrap();
         wi.set_hash_target(self.pre_tail_target, prev_tail).unwrap();
         wi.set_hash_target(self.tx_tail_target, tx_tail).unwrap();
+        self.ci.prove(wi).unwrap().proof
+    }
+
+    pub fn vk(&self) -> VerifierOnlyCircuitData<C, D> {
+        self.ci.verifier_only.clone()
+    }
+
+    pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
+        self.ci.verifier_data().clone()
+    }
+}
+
+pub struct TransCircuit {
+    ci: CircuitData<F, C, D>,
+    co: CircuitData<F, C, D>,
+    proof_with_public_inputs: ProofWithPublicInputsTarget<D>,
+    proof_with_pis_target: ProofWithPublicInputsTarget<D>,
+    extra1_target: HashOutTarget,
+    extra2_target: HashOutTarget,
+}
+
+impl TransCircuit {
+    pub fn new(inner: VerifierCircuitData<F, C, D>) -> Self {
+        let mut bi = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_zk_config());
+        let proof_with_public_inputs = bi.add_virtual_proof_with_pis(&inner.common);
+        bi.register_public_inputs(&proof_with_public_inputs.public_inputs);
+        let extra1_target = bi.add_virtual_hash_public_input();
+        let extra2_target = bi.add_virtual_hash_public_input();
+        let vd_target = bi.constant_verifier_data(&inner.verifier_only);
+        bi.verify_proof::<C>(&proof_with_public_inputs, &vd_target, &inner.common);
+        let ci = bi.build::<C>();
+        let mut bo = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
+        let proof_with_pis_target = bo.add_virtual_proof_with_pis(&ci.common);
+        let inner_verifier_data = bo.constant_verifier_data(&ci.verifier_only);
+        bo.register_public_inputs(&proof_with_pis_target.public_inputs);
+        bo.verify_proof::<C>(&proof_with_pis_target, &inner_verifier_data, &ci.common);
+        let co = bo.build::<C>();
+        Self {
+            ci,
+            co,
+            proof_with_public_inputs,
+            proof_with_pis_target,
+            extra1_target,
+            extra2_target,
+        }
+    }
+
+    pub fn prove(&self, proof_with_public_inputs: ProofWithPublicInputs<F, C, D>) -> Proof<GoldilocksField, C, 2> {
+        let mut wi = PartialWitness::<GoldilocksField>::new();
+        wi.set_proof_with_pis_target(&self.proof_with_public_inputs, &proof_with_public_inputs).unwrap();
+        wi.set_hash_target(self.extra1_target, HashOut::default()).unwrap();
+        wi.set_hash_target(self.extra2_target, HashOut::default()).unwrap();
         let witnesses = generate_partial_witness(wi, &self.ci.prover_only, &self.ci.common).unwrap();
         let proof_with_pis = prove_with_partition_witness(&self.ci.prover_only, &self.ci.common, witnesses, &mut TimingTree::default()).unwrap();
         let mut wo = PartialWitness::new();
@@ -157,49 +199,6 @@ impl AggCircuit {
 
     pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
         self.co.verifier_data().clone()
-    }
-}
-
-pub struct TransCircuit {
-    cd: CircuitData<F, C, D>,
-    proof_with_pis_target: ProofWithPublicInputsTarget<D>,
-    extra1_target: HashOutTarget,
-    extra2_target: HashOutTarget,
-}
-
-impl TransCircuit {
-    pub fn new(inner: VerifierCircuitData<F, C, D>) -> Self {
-        let mut builder = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_config());
-        let proof_with_pis_target = builder.add_virtual_proof_with_pis(&inner.common);
-        builder.register_public_inputs(&proof_with_pis_target.public_inputs);
-        let extra1_target = builder.add_virtual_hash_public_input();
-        let extra2_target = builder.add_virtual_hash_public_input();
-        let vd_target = builder.constant_verifier_data(&inner.verifier_only);
-        builder.verify_proof::<C>(&proof_with_pis_target, &vd_target, &inner.common);
-
-        let cd = builder.build::<C>();
-        Self {
-            cd,
-            proof_with_pis_target,
-            extra1_target,
-            extra2_target,
-        }
-    }
-
-    pub fn prove(&self, proof_with_public_inputs: ProofWithPublicInputs<F, C, D>) -> Proof<GoldilocksField, C, 2> {
-        let mut wi = PartialWitness::<GoldilocksField>::new();
-        wi.set_proof_with_pis_target(&self.proof_with_pis_target, &proof_with_public_inputs).unwrap();
-        wi.set_hash_target(self.extra1_target, HashOut::default()).unwrap();
-        wi.set_hash_target(self.extra2_target, HashOut::default()).unwrap();
-        self.cd.prove(wi).unwrap().proof
-    }
-
-    pub fn vk(&self) -> VerifierOnlyCircuitData<C, D> {
-        self.cd.verifier_only.clone()
-    }
-
-    pub fn vd(&self) -> VerifierCircuitData<F, C, D> {
-        self.cd.verifier_data().clone()
     }
 }
 

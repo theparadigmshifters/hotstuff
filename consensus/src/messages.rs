@@ -1,5 +1,5 @@
 use crate::config::Committee;
-use crate::consensus::{Round, ToField, ToHash};
+use crate::consensus::{Round, ToHash};
 use crate::error::{ConsensusError, ConsensusResult};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderProof;
@@ -7,7 +7,7 @@ use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircui
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::{clone, fmt};
+use std::fmt;
 use base64::{Engine as _, engine::general_purpose};
 use circuit::{AggCircuit, Digest, Hash, ProofService, TransCircuit};
 use placeholder_project_name_placeholder_zk::plonk::config::{Hasher, PoseidonGoldilocksConfig};
@@ -21,8 +21,7 @@ use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 pub struct SyncBlock {
     pub prev: [GoldilocksField; 4],
     pub transactions: Vec<HashOut<GoldilocksField>>,
-    pub proof: Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>,
-    //pub proof: PlaceholderProjectNamePlaceholderProof,
+    pub proof: PlaceholderProjectNamePlaceholderProof,
 }
 
 impl fmt::Debug for SyncBlock {
@@ -133,8 +132,8 @@ impl Block {
                     public_inputs: [prev.elements, parent.tx_tail().0.elements].concat(),
                 });
         trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [prev.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
-        //let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        SyncBlock { prev: prev.elements, transactions, proof: trans_proof }
+        let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
+        SyncBlock { prev: prev.elements, transactions, proof: l0_proof }
     }
 }
 
