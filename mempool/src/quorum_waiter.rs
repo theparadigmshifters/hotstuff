@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::config::{Committee, Stake};
 use crate::processor::SerializedBatchMessage;
-use crypto::PublicKey;
+use crypto::{PublicKey, Transaction};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use network::CancelHandler;
@@ -42,7 +42,7 @@ impl QuorumWaiter {
         committee: Committee,
         stake: Stake,
         rx_message: Receiver<QuorumWaiterMessage>,
-        tx_batch: Sender<Vec<u8>>,
+        tx_batch: Sender<Vec<Transaction>>,
     ) {
         tokio::spawn(async move {
             Self {

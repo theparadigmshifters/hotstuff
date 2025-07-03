@@ -176,7 +176,10 @@ impl Core {
                 let prev_block = self.get_block(block.clone().qc.hash).await;
                 let proof = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
             }
-            debug!("Committed {:?}", block);
+
+            for v in &block.payload {
+                info!("Committed block round {:?}, txn_hash:{:?}", block.round, v);
+            }
             
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
@@ -403,7 +406,7 @@ impl Core {
                 round: block.round
             }
         );
-
+        info!("handle_proposal block.prev:{:?}, hash_tail:{:?}", block.prev, self.store.get_txns_hash_tail(block.qc.clone().hash).await);
         ensure!( 
             block.prev == self.store.get_txns_hash_tail(block.qc.clone().hash).await,
             ConsensusError::InvalidPrev

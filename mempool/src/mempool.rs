@@ -1,12 +1,12 @@
-use crate::batch_maker::{Batch, BatchMaker, Transaction};
+use crate::batch_maker::{BatchMaker};
 use crate::config::{Committee, Parameters};
 use crate::helper::Helper;
-use crate::processor::{Processor, SerializedBatchMessage};
+use crate::processor::{Processor};
 use crate::quorum_waiter::QuorumWaiter;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
 use bytes::Bytes;
-use crypto::{Digest, PublicKey};
+use crypto::{Digest, PublicKey, Transaction};
 use futures::sink::SinkExt as _;
 use log::{info, warn};
 use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
@@ -24,7 +24,7 @@ pub type Round = u64;
 /// The message exchanged between the nodes' mempool.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MempoolMessage {
-    Batch(Batch),
+    Batch(Vec<Transaction>),
     BatchRequest(Vec<Digest>, /* origin */ PublicKey),
 }
 
@@ -197,9 +197,10 @@ struct TxReceiverHandler {
 #[async_trait]
 impl MessageHandler for TxReceiverHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
+        let txn = bincode::deserialize(&message).expect("Fail to deserialize transaction");
         // Send the transaction to the batch maker.
         self.tx_batch_maker
-            .send(message.to_vec())
+            .send(txn)
             .await
             .expect("Failed to send transaction");
 
@@ -213,7 +214,7 @@ impl MessageHandler for TxReceiverHandler {
 #[derive(Clone)]
 struct MempoolReceiverHandler {
     tx_helper: Sender<(Vec<Digest>, PublicKey)>,
-    tx_processor: Sender<SerializedBatchMessage>,
+    tx_processor: Sender<Vec<Transaction>>,
 }
 
 #[async_trait]
@@ -224,9 +225,9 @@ impl MessageHandler for MempoolReceiverHandler {
 
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
-            Ok(MempoolMessage::Batch(..)) => self
+            Ok(MempoolMessage::Batch(txn)) => self
                 .tx_processor
-                .send(serialized.to_vec())
+                .send(txn)
                 .await
                 .expect("Failed to send batch"),
             Ok(MempoolMessage::BatchRequest(missing, requestor)) => self

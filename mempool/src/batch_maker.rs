@@ -3,7 +3,7 @@ use crate::quorum_waiter::QuorumWaiterMessage;
 use bytes::Bytes;
 #[cfg(feature = "benchmark")]
 use crypto::Digest;
-use crypto::PublicKey;
+use crypto::{PublicKey, Transaction};
 #[cfg(feature = "benchmark")]
 use ed25519_dalek::{Digest as _, Sha512};
 #[cfg(feature = "benchmark")]
@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 
-pub type Transaction = Vec<u8>;
 pub type Batch = Vec<Transaction>;
 
 /// Assemble clients transactions into batches.
@@ -71,7 +70,8 @@ impl BatchMaker {
             tokio::select! {
                 // Assemble client transactions into batches of preset size.
                 Some(transaction) = self.rx_transaction.recv() => {
-                    self.current_batch_size += transaction.len();
+                    let txn = bincode::serialize(&transaction).expect("Fail to serialize transaction!");
+                    self.current_batch_size += txn.len();
                     self.current_batch.push(transaction);
                     if self.current_batch_size >= self.batch_size {
                         self.seal().await;
@@ -109,8 +109,9 @@ impl BatchMaker {
 
         // Serialize the batch.
         self.current_batch_size = 0;
-        let batch: Vec<_> = self.current_batch.drain(..).collect();
-        let message = MempoolMessage::Batch(batch);
+        let batch: Vec<Transaction> = self.current_batch.drain(..).collect();
+        let batch_for_message = batch.clone();
+        let message = MempoolMessage::Batch(batch_for_message);
         let serialized = bincode::serialize(&message).expect("Failed to serialize our own batch");
 
         #[cfg(feature = "benchmark")]
@@ -140,13 +141,12 @@ impl BatchMaker {
         let bytes = Bytes::from(serialized.clone());
         let handlers = self.network.broadcast(addresses, bytes).await;
 
-        // Send the batch through the deliver channel for further processing.
         self.tx_message
             .send(QuorumWaiterMessage {
-                batch: serialized,
+                batch,
                 handlers: names.into_iter().zip(handlers.into_iter()).collect(),
             })
             .await
             .expect("Failed to deliver batch");
-    }
+   }
 }

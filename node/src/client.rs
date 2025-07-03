@@ -1,14 +1,13 @@
 use anyhow::{Context, Result};
-use bytes::BufMut as _;
-use bytes::BytesMut;
 use clap::Parser;
+use crypto::Transaction;
 use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
 use log::{info, warn};
-use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
+use crypto::Digest;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
@@ -90,9 +89,7 @@ impl Client {
 
         // Submit all transactions.
         let burst = self.rate / PRECISION;
-        let mut tx = BytesMut::with_capacity(self.size);
         let mut counter = 0;
-        let mut r = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
@@ -105,22 +102,10 @@ impl Client {
             let now = Instant::now();
 
             for x in 0..burst {
-                if x == counter % burst {
-                    // NOTE: This log entry is used to compute performance.
-                    info!("Sending sample transaction {}", counter);
-
-                    tx.put_u8(0u8); // Sample txs start with 0.
-                    tx.put_u64(counter); // This counter identifies the tx.
-                } else {
-                    r += 1;
-
-                    tx.put_u8(1u8); // Standard txs start with 1.
-                    tx.put_u64(r); // Ensures all clients send different txs.
-                };
-                tx.resize(self.size, 0u8);
-                let bytes = tx.split().freeze();
-
-                if let Err(e) = transport.send(bytes).await {
+                let txn = Transaction::default();
+                let bytes = bincode::serialize(&txn).expect("Fail to serialize txn!");
+                info!("sending transactions counter:{:?}, txn_hash: {:?}", counter, Digest::from_field(txn.hash()));
+                if let Err(e) = transport.send(bytes.into()).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }

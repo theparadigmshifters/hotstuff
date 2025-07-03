@@ -1,12 +1,10 @@
 use crypto::Digest;
-use ed25519_dalek::Digest as _;
-use ed25519_dalek::Sha512;
-use std::convert::TryInto;
+use crypto::Transaction;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Indicates a serialized `MempoolMessage::Batch` message.
-pub type SerializedBatchMessage = Vec<u8>;
+pub type SerializedBatchMessage = Vec<Transaction>;
 
 /// Hashes and stores batches, it then outputs the batch's digest.
 pub struct Processor;
@@ -22,13 +20,13 @@ impl Processor {
     ) {
         tokio::spawn(async move {
             while let Some(batch) = rx_batch.recv().await {
-                // Hash the batch.
-                let digest = Digest(Sha512::digest(&batch).as_slice()[..32].try_into().unwrap());
-
-                // Store the batch.
-                store.write(digest.to_vec(), batch).await;
-
-                tx_digest.send(digest).await.expect("Failed to send digest");
+                for v in batch.iter() {
+                    let hash = v.hash();
+                    let digest = Digest::from_field(hash);
+                    let txn = bincode::serialize(v).expect("Fail to serialize transaction");
+                    store.write(digest.to_vec(), txn).await;
+                    tx_digest.send(digest).await.expect("Failed to send digest");
+                }
             }
         });
     }

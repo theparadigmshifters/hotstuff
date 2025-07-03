@@ -472,3 +472,59 @@ pub async fn convert_to_placeholder_proof(inner_data: &VerifierCircuitData<F, C,
     let proof = circuit_data.prove(witness).unwrap().proof.try_into().unwrap();
     (circuit_data.verifier_data(), proof)
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Transaction {
+    snap: [GoldilocksField; 4],
+    from: Vec<GoldilocksField>,
+    to: [GoldilocksField; 4],
+    amount: GoldilocksField,
+    nonce: GoldilocksField,
+    price: GoldilocksField,
+    payload: Vec<[GoldilocksField; 8]>,
+    proof: Vec<GoldilocksField>,
+}
+
+impl Transaction {
+    pub fn default() -> Self {
+        let r = rand::thread_rng().gen();
+        Transaction{
+            snap: [GoldilocksField(0); 4],
+            from: [GoldilocksField(0); 68].to_vec(),
+            to: [GoldilocksField(0); 4],
+            amount: GoldilocksField(0),
+            nonce: GoldilocksField(r),
+            price: GoldilocksField(0),
+            payload: [[GoldilocksField(0); 8]].to_vec(),
+            proof: [GoldilocksField(0); 16581].to_vec(), 
+        }
+    }
+     pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
+        let info = [self.amount, self.nonce, self.price, GoldilocksField(self.payload.len() as u64)];
+        let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
+        let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
+        [self.snap, self.get_from_addr().elements, self.to, info_hash]
+    }
+    pub fn hash(&self) -> [GoldilocksField; 4] { PoseidonHash::hash_no_pad(&self.public_inputs().concat()).elements }
+    pub fn verify_proof(&self) { VerifierCircuitData::from(self.get_from()).verify(ProofWithPublicInputs { proof: self.get_proof().into(), public_inputs: self.public_inputs().concat() }).unwrap() }
+    pub fn to_byte(&self) {
+        
+    }
+    pub fn get_proof(&self) -> PlaceholderProjectNamePlaceholderProof {
+        let arr: [GoldilocksField; 16581] = self.proof.clone().try_into().expect("proof must have length 16581");
+        PlaceholderProjectNamePlaceholderProof::from(arr)
+    }
+    pub fn get_from(&self) -> PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData {
+        let from: [GoldilocksField; 68] = self.from.clone().try_into().expect("proof must have length 68");
+        PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::from(from)
+    }
+    pub fn get_from_addr(&self) -> HashOut<GoldilocksField> {
+         HashOut::from(self.get_from())
+    }
+}
+
+#[test]
+fn test_txn() {
+    let txn = Transaction::default();
+    print!("txn: {:?}", txn)
+}

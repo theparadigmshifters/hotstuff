@@ -3,19 +3,16 @@ use crate::consensus::Round;
 use crate::error::{ConsensusError, ConsensusResult};
 use crypto::{generate_recursion_circuit, recursion_prove, BlockTarget, Digest, Hash, PublicKey, Signature, SignatureService, convert_to_placeholder_proof};
 use placeholder_project_name_placeholder_zk::field::types::Field;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{Error, PlaceholderProjectNamePlaceholderProof};
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderProof};
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 use std::iter::once;
-use std::convert::TryInto;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
-use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
-use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
+
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Block {
@@ -388,42 +385,5 @@ impl TC {
 impl fmt::Debug for TC {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "TC({}, {:?})", self.round, self.high_qc_rounds())
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Transaction {
-    snap: [GoldilocksField; 4],
-    from: Vec<GoldilocksField>,
-    to: [GoldilocksField; 4],
-    amount: GoldilocksField,
-    nonce: GoldilocksField,
-    price: GoldilocksField,
-    payload: Vec<[GoldilocksField; 8]>,
-    proof: Vec<GoldilocksField>,
-}
-
-impl Transaction {
-     pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
-        let info = [self.amount, self.nonce, self.price, GoldilocksField(self.payload.len() as u64)];
-        let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
-        let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
-        [self.snap, self.get_from_addr().elements, self.to, info_hash]
-    }
-    pub fn hash(&self) -> [GoldilocksField; 4] { PoseidonHash::hash_no_pad(&self.public_inputs().concat()).elements }
-    pub fn verify_proof(&self) { VerifierCircuitData::from(self.get_from()).verify(ProofWithPublicInputs { proof: self.get_proof().into(), public_inputs: self.public_inputs().concat() }).unwrap() }
-    pub fn to_byte(&self) {
-        
-    }
-    pub fn get_proof(&self) -> PlaceholderProjectNamePlaceholderProof {
-        let arr: [GoldilocksField; 16581] = self.proof.clone().try_into().expect("proof must have length 16581");
-        PlaceholderProjectNamePlaceholderProof::from(arr)
-    }
-    pub fn get_from(&self) -> PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData {
-        let from: [GoldilocksField; 68] = self.from.clone().try_into().expect("proof must have length 68");
-        PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::from(from)
-    }
-    pub fn get_from_addr(&self) -> HashOut<GoldilocksField> {
-         HashOut::from(self.get_from())
     }
 }
