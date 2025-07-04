@@ -2,7 +2,6 @@ use crate::consensus::Round;
 use circuit::Digest;
 use store::StoreError;
 use thiserror::Error;
-use std::sync::PoisonError;
 
 #[macro_export]
 macro_rules! bail {
@@ -63,19 +62,4 @@ pub enum ConsensusError {
 
     #[error("Invalid payload")]
     InvalidPayload,
-}
-
-#[derive(Debug)]
-pub struct Error;
-impl<T> From<PoisonError<T>> for Error {
-    fn from(value: PoisonError<T>) -> Self {
-        eprintln!("{:?}", value);
-        Self {}
-    }
-}
-impl From<placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::Error> for Error {
-    fn from(value: placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::Error) -> Self {
-        eprintln!("{:?}", value);
-        Self {}
-    }
 }

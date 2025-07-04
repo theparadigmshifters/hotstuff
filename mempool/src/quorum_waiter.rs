@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::config::{Committee, Stake};
-use crate::transaction::SerializedTransaction;
+use crate::mempool::SerializedTransaction;
 use circuit::Digest;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;

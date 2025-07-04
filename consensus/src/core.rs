@@ -9,12 +9,16 @@ use crate::proposer::ProposerMessage;
 use crate::synchronizer::Synchronizer;
 use crate::timer::Timer;
 use async_recursion::async_recursion;
+use bincode::deserialize;
 use bytes::Bytes;
 use circuit::{Digest, Hash, ProofService};
+use l0::Transaction;
 use log::{debug, error, info, warn};
+use mempool::TransactionFields;
 use network::SimpleSender;
 use std::cmp::max;
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -145,7 +149,21 @@ impl Core {
             }
             debug!("Committed {:?}", block);
             let parent = self.synchronizer.get_parent_block(&block).await?.expect("Parent block should exist");
-            let sync_block = block.aggregated_block(parent, &self.committee);
+            
+            let mut transactions = Vec::new();
+            for digest in &parent.payload {
+                match self.store.read(digest.to_vec()).await {
+                    Ok(Some(data)) => {
+                        let tf: TransactionFields = deserialize(&data).unwrap();
+                        let tx = Transaction::try_from(tf.0).unwrap();
+                        transactions.push(tx);
+                    },
+                    Ok(None) => (),
+                    Err(e) => error!("Error reading digest {}: {}", digest, e),
+                }
+            }
+
+            let sync_block = block.aggregated_block(parent, &self.committee, transactions);
             debug!("Aggregated {:?}", sync_block);
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);

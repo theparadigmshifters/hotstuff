@@ -1,4 +1,4 @@
-use crate::{mempool::MempoolMessage, transaction::SerializedTransaction};
+use crate::mempool::{MempoolMessage, SerializedTransaction};
 use crate::quorum_waiter::QuorumWaiterMessage;
 use bytes::Bytes;
 use circuit::Digest;
@@ -6,8 +6,6 @@ use network::ReliableSender;
 use std::net::SocketAddr;
 #[cfg(feature = "benchmark")]
 use log::info;
-#[cfg(feature = "benchmark")]
-use crate::transaction::Transaction;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// broadcast payloads.
@@ -60,13 +58,9 @@ impl PayloadBroadcaster {
         let serialized = bincode::serialize(&message).expect("Failed to serialize our own transaction");
         #[cfg(feature = "benchmark")]
         {
-            // NOTE: This is one extra hash that is only needed to print the following log entries.
-            let tx = Transaction::from_bytes(&transaction);
-            let digest = tx.hash();
             // NOTE: This log entry is used to compute performance.
             info!(
-                "receive transaction Hash {:?}",
-                digest
+                "receive transaction"
             );
         }
 

@@ -1,7 +1,11 @@
+use std::convert::TryFrom;
+
 use circuit::Digest;
 use store::Store;
+use bincode::deserialize;
 use tokio::sync::mpsc::{Receiver, Sender};
-use crate::{transaction::SerializedTransaction, Transaction};
+use crate::mempool::{SerializedTransaction, TransactionFields};
+use l0::Transaction;
 
 pub struct Processor;
 
@@ -16,12 +20,13 @@ impl Processor {
     ) {
         tokio::spawn(async move {
             while let Some(tx_bytes) = rx_transaction.recv().await {
-                let tx = Transaction::from_bytes(&tx_bytes);
+                let tf: TransactionFields = deserialize(&tx_bytes).unwrap();
+                let tx = Transaction::try_from(tf.0).unwrap();
                 // Hash the transaction.
-                let digest = Digest(tx.hash());
+                let digest = Digest(tx.hash().into());
 
                 // Store the transaction.
-                store.write(digest.to_vec(), tx.to_bytes()).await;
+                store.write(digest.to_vec(), tx_bytes).await;
 
                 tx_digest.send(digest).await.expect("Failed to send digest");
             }

@@ -2,7 +2,7 @@ use crate::config::Committee;
 use crate::consensus::{Round, ToHash};
 use crate::error::{ConsensusError, ConsensusResult};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderProof;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderHash, PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData};
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -16,21 +16,17 @@ use placeholder_project_name_placeholder_zk::field::goldilocks_field::Goldilocks
 use placeholder_project_name_placeholder_zk::util::serialization::DefaultGateSerializer;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
+use l0::Transaction;
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct SyncBlock {
-    pub prev: [GoldilocksField; 4],
-    pub transactions: Vec<HashOut<GoldilocksField>>,
-    pub proof: PlaceholderProjectNamePlaceholderProof,
-}
+pub struct SyncBlock(pub l0::Block);
 
 impl fmt::Debug for SyncBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(
             f,
             "B(prev: {:?}, tx_num: {})",
-            self.prev,
-            self.transactions.len(),
+            self.0.last,
+            self.0.transactions.len(),
             //&self.proof,
         )
     }
@@ -103,7 +99,7 @@ impl Block {
         Ok(())
     }
 
-    pub fn aggregated_block(&self, parent: Block, committee: &Committee) -> SyncBlock {
+    pub fn aggregated_block(&self, parent: Block, committee: &Committee, transactions:Vec<Transaction>) -> SyncBlock {
         let vds = self.qc.votes
             .iter()
             .map(|v| {
@@ -114,7 +110,6 @@ impl Block {
                 VerifierCircuitData::from_bytes(vd_decoded, &DefaultGateSerializer).unwrap()
             }).collect::<Vec<_>>();
         let prev = parent.qc.tx_tail.0;
-        let transactions: Vec<HashOut<GoldilocksField>> = parent.payload.iter().map(|v| v.0).collect();
         let agg_circuit = AggCircuit::new(vds.clone());
         let proofs_with_inputs = self.qc.votes
             .iter()
@@ -133,7 +128,7 @@ impl Block {
                 });
         trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [prev.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
         let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        SyncBlock { prev: prev.elements, transactions, proof: l0_proof }
+        SyncBlock(l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(prev), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof})
     }
 }
 

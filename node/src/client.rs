@@ -5,16 +5,18 @@ use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
 use log::{info, warn};
+use mempool::{SerializedTransaction, TransactionFields};
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::field::types::Field;
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData};
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderField, PlaceholderProjectNamePlaceholderHash, PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData};
 use rand::Rng;
+use serde::Serialize;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use mempool::Transaction;
+use l0::Transaction;
 
 #[derive(Parser)]
 #[clap(
@@ -78,7 +80,7 @@ struct Client {
 impl Client {
     pub async fn send(&self) -> Result<()> {
         const PRECISION: u64 = 1; // Sample precision.
-        const BURST_DURATION: u64 = 1000 / PRECISION;
+        const BURST_DURATION: u64 = 10000 / PRECISION; //10s
 
         // The transaction size must be at least 16 bytes to ensure all txs are different.
         if self.size < 16 {
@@ -94,8 +96,7 @@ impl Client {
 
         // Submit all transactions.
         let burst = self.rate / PRECISION;
-        let mut counter = 0;
-        let mut r = rand::thread_rng().gen();
+        let mut r: u64 = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
@@ -108,20 +109,19 @@ impl Client {
             let now = Instant::now();
 
             for x in 0..burst {
-                let tx = Transaction::new(
-                    HashOut::default().elements,
-                    PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::from([GoldilocksField::ZERO; 68]),
-                    HashOut::default().elements,
-                    GoldilocksField(0),
-                    GoldilocksField(r),
-                    GoldilocksField(0),
-                    vec![[GoldilocksField::ZERO; 8]; 4],
-                    PlaceholderProjectNamePlaceholderProof::from([GoldilocksField::ZERO; 16581]),
-                );
+                let tx = Transaction{
+                    proof: PlaceholderProjectNamePlaceholderProof::from([GoldilocksField::ZERO; 16581]),
+                    snap: PlaceholderProjectNamePlaceholderHash::default(),
+                    from: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::from([GoldilocksField::ZERO; 68]),
+                    to: PlaceholderProjectNamePlaceholderHash::default(),
+                    nonce: PlaceholderProjectNamePlaceholderField::from(r),
+                    amount: PlaceholderProjectNamePlaceholderField::default(),
+                    gas: PlaceholderProjectNamePlaceholderField::default(),
+                    payload: vec![PlaceholderProjectNamePlaceholderField::default(); 8]};
                 r = r + 1;
                 info!("Sending transaction {}, {}", x, r);
-                
-                if let Err(e) = transport.send(Bytes::from(tx.to_bytes())).await {
+                let tf = TransactionFields(tx.into());
+                if let Err(e) = transport.send(Bytes::from(bincode::serialize(&tf).unwrap())).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
@@ -130,7 +130,6 @@ impl Client {
                 // NOTE: This log entry is used to compute performance.
                 warn!("Transaction rate too high for this client");
             }
-            counter += 1;
         }
         Ok(())
     }
