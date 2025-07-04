@@ -103,8 +103,8 @@ impl Block {
 
     pub fn txns_hash_tail(&self, prev: Digest) -> Digest {
         if self.payload.len() > 0 {
-            let current = self.txns_hash();
-            return Digest::from_field(PoseidonHash::two_to_one(prev.to_field().into(), current.to_field().into()).elements)
+            let hash = self.payload.iter().fold(prev.to_field().into(), |x, y| PoseidonHash::two_to_one(x, y.to_field().into()));
+            return Digest::from_field(hash.elements)
         }
         prev
     }
