@@ -117,7 +117,6 @@ impl Consensus {
             rx_mempool,
             /* rx_message */ rx_proposer,
             tx_loopback,
-            store.clone(),
         );
 
         // Spawn the helper module.

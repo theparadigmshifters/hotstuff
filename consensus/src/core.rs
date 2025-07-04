@@ -16,7 +16,6 @@ use log::{debug, error, info, warn};
 use network::SimpleSender;
 use std::cmp::max;
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 use crypto::Digest;
@@ -94,26 +93,11 @@ impl Core {
         let key = block.digest().to_vec();
         let value = bincode::serialize(block).expect("Failed to serialize block");
         self.store.write(key.clone(), value).await;
+    }
 
-        let prefix = "txns_hash_tail".as_bytes();
-        let hash = block.qc.hash.to_vec();
-        let mut k = Vec::with_capacity(prefix.len() + hash.len());
-        k.extend_from_slice(prefix);
-        k.extend(hash);
-        let mut v = self.store.read(k).await.expect("Failed to read store");
-        if v.is_none() {
-            v = Some(Digest::default().to_vec());
-        }
-        let v_unwrapped = v.as_ref().unwrap();
-        info!("store_block hash:{:?}, round:{:?}", v_unwrapped, block.round);
-        let value = block.txns_hash_tail(Digest(
-            v_unwrapped.clone().try_into().expect("Digest must be 32 bytes"),
-        ));
-        let key_clone = key.clone();
-        let mut k2 = Vec::with_capacity(prefix.len() + key_clone.len());
-        k2.extend_from_slice(prefix);
-        k2.extend_from_slice(&key_clone);
-        self.store.write(k2, value.to_vec()).await;
+    pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
+        let block = self.get_block(prev_block_hash).await;
+        block.txns_hash_tail(block.prev.clone())
     }
 
     fn increase_last_voted_round(&mut self, target: Round) {
@@ -313,8 +297,13 @@ impl Core {
 
     #[async_recursion]
     async fn generate_proposal(&mut self, tc: Option<TC>) {
+        info!("generate_proposal:{:?}", self.high_qc.round);
+        let mut prev = Digest::default();
+        if self.high_qc != QC::genesis() {
+            prev = self.get_txns_hash_tail(self.high_qc.clone().hash).await;
+        } 
         self.tx_proposer
-            .send(ProposerMessage::Make(self.round, self.high_qc.clone(), tc))
+            .send(ProposerMessage::Make(self.round, self.high_qc.clone(), prev, tc))
             .await
             .expect("Failed to send message to proposer");
     }
@@ -406,11 +395,14 @@ impl Core {
                 round: block.round
             }
         );
-        info!("handle_proposal block.prev:{:?}, hash_tail:{:?}", block.prev, self.store.get_txns_hash_tail(block.qc.clone().hash).await);
-        ensure!( 
-            block.prev == self.store.get_txns_hash_tail(block.qc.clone().hash).await,
-            ConsensusError::InvalidPrev
-        );
+        if block.qc != QC::genesis() {
+            info!("handle_proposal block.prev:{:?}, hash_tail:{:?}", block.prev, self.get_txns_hash_tail(block.qc.clone().hash).await);
+            ensure!( 
+                block.prev == self.get_txns_hash_tail(block.qc.clone().hash).await,
+                ConsensusError::InvalidPrev
+            );
+        }
+
         
         // Check the block is correctly formed.
         block.verify(&self.committee)?;

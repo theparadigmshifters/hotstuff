@@ -9,11 +9,10 @@ use log::{debug, info};
 use network::{CancelHandler, ReliableSender};
 use std::collections::HashSet;
 use tokio::sync::mpsc::{Receiver, Sender};
-use store::Store;
 
 #[derive(Debug)]
 pub enum ProposerMessage {
-    Make(Round, QC, Option<TC>),
+    Make(Round, QC, Digest, Option<TC>),
     Cleanup(Vec<Digest>),
 }
 
@@ -26,7 +25,6 @@ pub struct Proposer {
     tx_loopback: Sender<Block>,
     buffer: HashSet<Digest>,
     network: ReliableSender,
-    store: Store,
 }
 
 impl Proposer {
@@ -37,7 +35,6 @@ impl Proposer {
         rx_mempool: Receiver<Digest>,
         rx_message: Receiver<ProposerMessage>,
         tx_loopback: Sender<Block>,
-        store: Store,
     ) {
         tokio::spawn(async move {
             Self {
@@ -49,7 +46,6 @@ impl Proposer {
                 tx_loopback,
                 buffer: HashSet::new(),
                 network: ReliableSender::new(),
-                store,
             }
             .run()
             .await;
@@ -62,8 +58,7 @@ impl Proposer {
         deliver
     }
 
-    async fn make_block(&mut self, round: Round, qc: QC, tc: Option<TC>) {
-        let prev = self.store.get_txns_hash_tail(qc.clone().hash).await;
+    async fn make_block(&mut self, round: Round, qc: QC, prev: Digest, tc: Option<TC>) {
         info!("make_block prev:{:?}", prev);
         // Generate a new block.
         let block = Block::new(
@@ -139,7 +134,7 @@ impl Proposer {
                     }
                 },
                 Some(message) = self.rx_message.recv() => match message {
-                    ProposerMessage::Make(round, qc, tc) => self.make_block(round, qc, tc).await,
+                    ProposerMessage::Make(round, qc, prev, tc) => self.make_block(round, qc, prev, tc).await,
                     ProposerMessage::Cleanup(digests) => {
                         for x in &digests {
                             self.buffer.remove(x);
