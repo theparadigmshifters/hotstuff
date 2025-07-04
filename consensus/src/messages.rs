@@ -7,12 +7,14 @@ use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholde
 use placeholder_project_name_placeholder_zk::plonk::config::Hasher;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::fmt;
 use std::iter::once;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
-
+use crypto::Transaction;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Block {
@@ -231,7 +233,7 @@ impl QC {
         }
         Ok(())
     }
-    pub async fn generate_recursion_prove(&self, committee: &Committee, block: &Block) -> PlaceholderProjectNamePlaceholderProof {
+    pub async fn generate_recursion_prove(&self, committee: &Committee, block: &Block) -> (PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderProof) {
         let vds = self.votes.iter().map(|v| committee.vd(&v.0).unwrap()).collect();
         let (circuit_data, targets, proof_targets) = generate_recursion_circuit(&vds);
         let proofs = self.votes.iter().map(|v| v.1.proof().clone()).collect::<Vec<_>>();
@@ -251,7 +253,7 @@ impl QC {
         let proof = recursion_prove(circuit_data, targets, proof_targets, proofs, block_target).await.unwrap();
         let (verifier_data, proof) = convert_to_placeholder_proof(&verifier_data, proof).await;
         verifier_data.verify(ProofWithPublicInputs{ proof: proof.into(), public_inputs: [block.prev.to_field(), block.txns_hash().to_field(), [GoldilocksField(0); 4], [GoldilocksField(0); 4]].concat()}).unwrap();
-        proof
+        (PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(verifier_data.verifier_only).expect("Failed to palcehoder!"), proof)
     }
 }
 
@@ -386,4 +388,13 @@ impl fmt::Debug for TC {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "TC({}, {:?})", self.round, self.high_qc_rounds())
     }
+}
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct SyncBlock {
+    pub proof: Vec<GoldilocksField>,
+    pub last: [GoldilocksField; 4],
+    pub consensus:  Vec<GoldilocksField>,
+    pub meta: [GoldilocksField; 4],
+    pub transactions: Vec<Transaction>,
 }

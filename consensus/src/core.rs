@@ -4,16 +4,17 @@ use crate::consensus::{ConsensusMessage, Round};
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::leader::LeaderElector;
 use crate::mempool::MempoolDriver;
-use crate::messages::{Block, Timeout, Vote, QC, TC};
+use crate::messages::{Block, SyncBlock, Timeout, Vote, QC, TC};
 use crate::proposer::ProposerMessage;
 use crate::synchronizer::Synchronizer;
 use crate::timer::Timer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
-use crypto::Hash as _;
+use crypto::{Hash as _, Transaction};
 use crypto::{PublicKey, SignatureService};
 use log::{debug, error, info, warn};
 use network::SimpleSender;
+use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use std::cmp::max;
 use std::collections::VecDeque;
 use store::Store;
@@ -84,8 +85,13 @@ impl Core {
     }
 
     async fn get_block(&mut self, block_hash: Digest) -> Block {
-        let block_bytes = self.store.read(block_hash.to_vec()).await.unwrap();
+        let block_bytes = self.store.read(block_hash.to_vec()).await.expect("Failed to get block by hash");
         bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block")
+    }
+
+    async fn get_txn(&mut self, txn_hash: Digest) -> Transaction {
+        let txn_bytes = self.store.read(txn_hash.to_vec()).await.expect("Failed to get transaction by hash");
+        bincode::deserialize(&txn_bytes.unwrap()).expect("Failed to derialize transaction")
     }
 
     async fn store_block(&mut self, block: &Block) {
@@ -93,6 +99,17 @@ impl Core {
         let key = block.digest().to_vec();
         let value = bincode::serialize(block).expect("Failed to serialize block");
         self.store.write(key.clone(), value).await;
+    }
+
+    async fn store_sync_block(&mut self, block: &SyncBlock) {
+        let key = Digest::from_field(block.last).to_vec();
+        let value = bincode::serialize(block).expect("Failed to serialize sync block");
+        self.store.write(key.clone(), value).await;
+    }
+
+    async fn get_sync_block(&mut self, last: Digest) -> SyncBlock {
+        let block_bytes = self.store.read(last.to_vec()).await.expect("Failed to get sync block by hash");
+        bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block")
     }
 
     pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
@@ -158,7 +175,24 @@ impl Core {
             }
             if block.qc.votes.len() > 0 {
                 let prev_block = self.get_block(block.clone().qc.hash).await;
-                let proof = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
+                let (vd, proof) = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
+                
+                let payload = block.payload.clone();
+                let mut txns = Vec::with_capacity(payload.len());
+                for v in payload {
+                    txns.push(self.get_txn(v).await);
+                }
+                
+                let p: [GoldilocksField; 16581] = proof.into();
+                let vd:[GoldilocksField; 68] = vd.into();
+                let sync_block = SyncBlock {
+                    proof: p.to_vec(),
+                    last: block.prev.to_field(),
+                    consensus: vd.to_vec(),
+                    meta: [GoldilocksField(0); 4],
+                    transactions: txns,
+                };
+                self.store_sync_block(&sync_block).await;
             }
 
             for v in &block.payload {
@@ -403,7 +437,6 @@ impl Core {
             );
         }
 
-        
         // Check the block is correctly formed.
         block.verify(&self.committee)?;
 
