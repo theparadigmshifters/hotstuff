@@ -82,7 +82,7 @@ impl Block {
     }
 
     pub fn tx_tail(&self) -> Digest {
-        let tx_tail = self.payload.iter().fold(HashOut::<GoldilocksField>::default(), |x, y| PoseidonHash::two_to_one(x, y.0));
+        let tx_tail = self.payload.iter().fold(self.qc.last_tail.0, |x, y| PoseidonHash::two_to_one(x, y.0));
         Digest(tx_tail)
     }
 
@@ -119,7 +119,7 @@ impl Block {
                 let vd_decoded = general_purpose::STANDARD.decode(&vd_encoded).unwrap();
                 VerifierCircuitData::from_bytes(vd_decoded, &DefaultGateSerializer).unwrap()
             }).collect::<Vec<_>>();
-        let prev = parent.qc.tx_tail.0;
+        let last_tail = parent.qc.last_tail.0;
         let agg_circuit = AggCircuit::new(vds.clone());
         let proofs_with_inputs = self.qc.votes
             .iter()
@@ -129,16 +129,16 @@ impl Block {
                     public_inputs: self.qc.digest().to_vec_field(),
                 }
             }).collect::<Vec<_>>();
-        let agg_proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_hash(), parent.qc.hash.0, prev, parent.tx_tail().0);
+        let agg_proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_hash(), parent.qc.hash.0, last_tail, parent.tx_tail().0);
         let trans_circuit = TransCircuit::new(agg_circuit.vd());
         let trans_proof = trans_circuit.prove(
                 ProofWithPublicInputs {
                     proof: agg_proof.clone(),
-                    public_inputs: [prev.elements, parent.tx_tail().0.elements].concat(),
+                    public_inputs: [last_tail.elements, parent.tx_tail().0.elements].concat(),
                 });
-        trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [prev.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
+        trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [last_tail.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
         let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(prev), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof};
+        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(last_tail), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof};
         debug!("Aggregated block, last: {:?}, tx_num: {}", l0_block.last, l0_block.transactions.len());
         SyncBlock(l0_block.try_into().unwrap())
     }
@@ -148,8 +148,8 @@ impl Hash for Block {
     fn digest(&self) -> Digest {
         let h1= PoseidonHash::two_to_one(HashOut::from_vec(self.author.to_vec_field()), self.round.to_hash());
         let h2 = PoseidonHash::two_to_one(h1, HashOut::from_vec(self.qc.hash.to_vec_field()));
-        let h3 = PoseidonHash::two_to_one(h2, HashOut::from_vec(self.qc.tx_tail.to_vec_field()));
-        let tx_tail = self.payload.iter().fold(HashOut::default(), |x, y| PoseidonHash::two_to_one(x, y.0));
+        let h3 = PoseidonHash::two_to_one(h2, HashOut::from_vec(self.qc.last_tail.to_vec_field()));
+        let tx_tail = self.payload.iter().fold(self.qc.last_tail.0, |x, y| PoseidonHash::two_to_one(x, y.0));
         let h4 = PoseidonHash::two_to_one(h3, tx_tail);
         Digest(h4)
     }
@@ -232,7 +232,7 @@ impl fmt::Debug for Vote {
 pub struct QC {
     pub hash: Digest,
     pub round: Round,
-    pub tx_tail: Digest,
+    pub last_tail: Digest,
     pub votes: Vec<(Digest, Proof<GoldilocksField, PoseidonGoldilocksConfig, 2>)>,
 }
 
@@ -272,14 +272,14 @@ impl QC {
 impl Hash for QC {
     fn digest(&self) -> Digest {
         let h1= PoseidonHash::two_to_one(HashOut::from_vec(self.hash.to_vec_field()), self.round.to_hash());
-        let h2= PoseidonHash::two_to_one(h1, HashOut::from_vec(self.tx_tail.to_vec_field()));
+        let h2= PoseidonHash::two_to_one(h1, HashOut::from_vec(self.last_tail.to_vec_field()));
         Digest(h2)
     }
 }
 
 impl fmt::Debug for QC {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "QC({}, {}, {})", self.hash, self.round, self.tx_tail)
+        write!(f, "QC({}, {}, {})", self.hash, self.round, self.last_tail)
     }
 }
 

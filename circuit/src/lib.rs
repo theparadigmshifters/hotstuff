@@ -80,7 +80,7 @@ pub struct AggCircuit {
     author_target: HashOutTarget,
     round_target: HashOutTarget,
     pre_hash_target: HashOutTarget,
-    pre_tail_target: HashOutTarget,
+    last_tail_target: HashOutTarget,
     tx_tail_target: HashOutTarget,
 }
 
@@ -93,15 +93,15 @@ impl AggCircuit {
         let round_target = bi.add_virtual_hash();
         let pre_hash_target = bi.add_virtual_hash();
         // public input
-        let pre_tail_target = bi.add_virtual_hash_public_input();
+        let last_tail_target = bi.add_virtual_hash_public_input();
         let tx_tail_target = bi.add_virtual_hash_public_input();
 
         let h1 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([author_target.elements, round_target.elements].concat());
         let h2 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h1.elements, pre_hash_target.elements].concat());
-        let h3 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h2.elements, pre_tail_target.elements].concat());
-        let msg_hash_target = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h3.elements, tx_tail_target.elements].concat());
+        let h3 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h2.elements, last_tail_target.elements].concat());
+        let block_hash_target = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h3.elements, tx_tail_target.elements].concat());
 
-        let h4 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([msg_hash_target.elements, round_target.elements].concat());
+        let h4 = bi.hash_n_to_hash_no_pad::<PoseidonHash>([block_hash_target.elements, round_target.elements].concat());
         let sign_hash_target = bi.hash_n_to_hash_no_pad::<PoseidonHash>([h4.elements, tx_tail_target.elements].concat());
 
         for inner in inners.iter() {
@@ -118,13 +118,13 @@ impl AggCircuit {
             author_target,
             round_target,
             pre_hash_target,
-            pre_tail_target,
+            last_tail_target,
             tx_tail_target,
         }
     }
 
     pub fn prove(&self, proof_with_public_inputs: Vec<ProofWithPublicInputs<F, C, D>>, author: HashOut<GoldilocksField>, round: HashOut<GoldilocksField>, pre_hash: HashOut<GoldilocksField>, 
-        prev_tail: HashOut<GoldilocksField>, tx_tail: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
+        last_tail: HashOut<GoldilocksField>, tx_tail: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
         let mut wi = PartialWitness::<GoldilocksField>::new();
         for (i, p) in proof_with_public_inputs.iter().enumerate() {
             wi.set_proof_with_pis_target(&self.proof_with_public_inputs[i], &p).unwrap();
@@ -132,7 +132,7 @@ impl AggCircuit {
         wi.set_hash_target(self.author_target, author).unwrap();
         wi.set_hash_target(self.round_target, round).unwrap();
         wi.set_hash_target(self.pre_hash_target, pre_hash).unwrap();
-        wi.set_hash_target(self.pre_tail_target, prev_tail).unwrap();
+        wi.set_hash_target(self.last_tail_target, last_tail).unwrap();
         wi.set_hash_target(self.tx_tail_target, tx_tail).unwrap();
         self.ci.prove(wi).unwrap().proof
     }
