@@ -1,12 +1,13 @@
 use crate::config::Committee;
 use crate::consensus::{Round, ToHash};
 use crate::error::{ConsensusError, ConsensusResult};
+use log::debug;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
-use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderHash, PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData};
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::{PlaceholderProjectNamePlaceholderHash, PlaceholderProjectNamePlaceholderProof, PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData, PlaceholderProjectNamePlaceholderField};
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::VerifierCircuitData;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use std::collections::HashSet;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use base64::{Engine as _, engine::general_purpose};
 use circuit::{AggCircuit, Digest, Hash, ProofService, TransCircuit};
@@ -18,17 +19,26 @@ use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs
 use placeholder_project_name_placeholder_zk::hash::hash_types::HashOut;
 use l0::Transaction;
 
-pub struct SyncBlock(pub l0::Block);
+pub struct SyncBlock(pub Vec<PlaceholderProjectNamePlaceholderField>);
 
-impl fmt::Debug for SyncBlock {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(
-            f,
-            "B(prev: {:?}, tx_num: {})",
-            self.0.last,
-            self.0.transactions.len(),
-            //&self.proof,
-        )
+impl Serialize for SyncBlock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let u64_vec: Vec<u64> = self.0.iter().map(|field| (*field).into()).collect();
+        serializer.collect_seq(u64_vec)
+    }
+}
+
+impl<'de> Deserialize<'de> for SyncBlock {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let u64_vec = Vec::<u64>::deserialize(deserializer)?;
+        let fields = u64_vec.into_iter().map(|u| {PlaceholderProjectNamePlaceholderField::from(u)}).collect(); //TODO: overflow?
+        Ok(SyncBlock(fields))
     }
 }
 
@@ -128,7 +138,9 @@ impl Block {
                 });
         trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [prev.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
         let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        SyncBlock(l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(prev), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof})
+        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(prev), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof};
+        debug!("Aggregated block, last: {:?}, tx_num: {}", l0_block.last, l0_block.transactions.len());
+        SyncBlock(l0_block.try_into().unwrap())
     }
 }
 

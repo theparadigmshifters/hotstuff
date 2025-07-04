@@ -164,7 +164,6 @@ impl Core {
             }
 
             let sync_block = block.aggregated_block(parent, &self.committee, transactions);
-            debug!("Aggregated {:?}", sync_block);
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }
