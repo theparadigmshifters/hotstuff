@@ -131,14 +131,25 @@ impl Block {
             }).collect::<Vec<_>>();
         let agg_proof = agg_circuit.prove(proofs_with_inputs, parent.author.0, parent.round.to_hash(), parent.qc.hash.0, last_tail, parent.tx_tail().0);
         let trans_circuit = TransCircuit::new(agg_circuit.vd());
+        let consensus = PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap();
+        let consensus_array: [GoldilocksField; 68] = consensus.into();
+        let meta = PlaceholderProjectNamePlaceholderHash::default();
         let trans_proof = trans_circuit.prove(
                 ProofWithPublicInputs {
                     proof: agg_proof.clone(),
                     public_inputs: [last_tail.elements, parent.tx_tail().0.elements].concat(),
-                });
-        trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs: [last_tail.elements, parent.tx_tail().0.elements, HashOut::default().elements, HashOut::default().elements].concat()}).expect("aggregated proof verification failed");
+                },
+                consensus_array,
+                meta.into(),
+            );
+        let mut public_inputs = Vec::new();
+        public_inputs.extend_from_slice(&last_tail.elements);
+        public_inputs.extend_from_slice(&parent.tx_tail().0.elements);
+        public_inputs.extend_from_slice(&consensus_array);
+        public_inputs.extend_from_slice(&HashOut::<GoldilocksField>::from(meta).elements);
+        trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs}).expect("aggregated proof verification failed");
         let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(last_tail), meta: PlaceholderProjectNamePlaceholderHash::default(), consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(trans_circuit.vk()).unwrap(), transactions, proof: l0_proof};
+        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(last_tail), meta, consensus, transactions, proof: l0_proof};
         debug!("Aggregated block, last: {:?}, tx_num: {}", l0_block.last, l0_block.transactions.len());
         SyncBlock(l0_block.try_into().unwrap())
     }

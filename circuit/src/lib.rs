@@ -2,6 +2,7 @@ use placeholder_project_name_placeholder_zk::field::goldilocks_field::Goldilocks
 use placeholder_project_name_placeholder_zk::hash::hash_types::{HashOut, HashOutTarget};
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::iop::generator::generate_partial_witness;
+use placeholder_project_name_placeholder_zk::iop::target::Target;
 use placeholder_project_name_placeholder_zk::plonk::prover::prove_with_partition_witness;
 use placeholder_project_name_placeholder_zk::iop::witness::{PartialWitness, WitnessWrite};
 use placeholder_project_name_placeholder_zk::plonk::circuit_data::{CircuitData, CircuitConfig};
@@ -16,6 +17,7 @@ use base64::{Engine as _, engine::general_purpose};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 use std::fmt;
+use std::thread::Builder;
 use log::info;
 use std::time::Instant;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
@@ -151,8 +153,8 @@ pub struct TransCircuit {
     co: CircuitData<F, C, D>,
     proof_with_public_inputs: ProofWithPublicInputsTarget<D>,
     proof_with_pis_target: ProofWithPublicInputsTarget<D>,
-    extra1_target: HashOutTarget,
-    extra2_target: HashOutTarget,
+    consensus_target: [Target; 68],
+    meta_target: HashOutTarget,
 }
 
 impl TransCircuit {
@@ -160,8 +162,9 @@ impl TransCircuit {
         let mut bi = CircuitBuilder::<F, D>::new(CircuitConfig::standard_recursion_zk_config());
         let proof_with_public_inputs = bi.add_virtual_proof_with_pis(&inner.common);
         bi.register_public_inputs(&proof_with_public_inputs.public_inputs);
-        let extra1_target = bi.add_virtual_hash_public_input();
-        let extra2_target = bi.add_virtual_hash_public_input();
+        let consensus_target = bi.add_virtual_target_arr();
+        bi.register_public_inputs(&consensus_target);
+        let meta_target = bi.add_virtual_hash_public_input();
         let vd_target = bi.constant_verifier_data(&inner.verifier_only);
         bi.verify_proof::<C>(&proof_with_public_inputs, &vd_target, &inner.common);
         let ci = bi.build::<C>();
@@ -176,16 +179,16 @@ impl TransCircuit {
             co,
             proof_with_public_inputs,
             proof_with_pis_target,
-            extra1_target,
-            extra2_target,
+            consensus_target,
+            meta_target,
         }
     }
 
-    pub fn prove(&self, proof_with_public_inputs: ProofWithPublicInputs<F, C, D>) -> Proof<GoldilocksField, C, 2> {
+    pub fn prove(&self, proof_with_public_inputs: ProofWithPublicInputs<F, C, D>, consensus: [GoldilocksField; 68], meta: HashOut<GoldilocksField>) -> Proof<GoldilocksField, C, 2> {
         let mut wi = PartialWitness::<GoldilocksField>::new();
         wi.set_proof_with_pis_target(&self.proof_with_public_inputs, &proof_with_public_inputs).unwrap();
-        wi.set_hash_target(self.extra1_target, HashOut::default()).unwrap();
-        wi.set_hash_target(self.extra2_target, HashOut::default()).unwrap();
+        wi.set_target_arr(&self.consensus_target, &consensus).unwrap();
+        wi.set_hash_target(self.meta_target, meta).unwrap();
         let witnesses = generate_partial_witness(wi, &self.ci.prover_only, &self.ci.common).unwrap();
         let proof_with_pis = prove_with_partition_witness(&self.ci.prover_only, &self.ci.common, witnesses, &mut TimingTree::default()).unwrap();
         let mut wo = PartialWitness::new();
