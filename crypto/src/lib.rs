@@ -400,11 +400,11 @@ pub fn generate_recursion_circuit(inner_data: &Vec<VerifierCircuitData<F, C, D>>
     targets.push(txns_target);
 
     let h1 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([author_target.elements, round_target.elements].concat());
-    let h2 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([prev_target.elements, txns_target.elements].concat());
-    let h3 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h1.elements, h2.elements].concat());
-    let block_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h3.elements, qc_target.elements].concat());
+    let h2 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h1.elements, txns_target.elements].concat());
+    let block_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h2.elements, qc_target.elements].concat());
 
-    let vote_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([block_hash.elements, round_target.elements].concat());
+    let h3 = builder.hash_n_to_hash_no_pad::<PoseidonHash>([block_hash.elements, round_target.elements].concat());
+    let vote_hash = builder.hash_n_to_hash_no_pad::<PoseidonHash>([h3.elements, prev_target.elements].concat());
 
     for data in inner_data.iter() {
         let proof_target = builder.add_virtual_proof_with_pis(&data.common);

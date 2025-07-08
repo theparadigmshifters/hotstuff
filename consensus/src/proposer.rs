@@ -12,7 +12,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(Debug)]
 pub enum ProposerMessage {
-    Make(Round, QC, Digest, Option<TC>),
+    Make(Round, QC, Option<TC>),
     Cleanup(Vec<Digest>),
 }
 
@@ -58,15 +58,14 @@ impl Proposer {
         deliver
     }
 
-    async fn make_block(&mut self, round: Round, qc: QC, prev: Digest, tc: Option<TC>) {
-        info!("make_block prev:{:?}", prev);
+    async fn make_block(&mut self, round: Round, qc: QC, tc: Option<TC>) {
+        info!("make_block prev:{:?}", qc.last);
         // Generate a new block.
         let block = Block::new(
             qc,
             tc,
             self.name,
             round,
-            prev,
             /* payload */ self.buffer.drain().collect(),
             self.signature_service.clone(),
         )
@@ -93,6 +92,7 @@ impl Proposer {
             .iter()
             .cloned()
             .unzip();
+        info!("Proposer addresses:{:?}", addresses);
         let message = bincode::serialize(&ConsensusMessage::Propose(block.clone()))
             .expect("Failed to serialize block");
         let handles = self
@@ -134,7 +134,7 @@ impl Proposer {
                     }
                 },
                 Some(message) = self.rx_message.recv() => match message {
-                    ProposerMessage::Make(round, qc, prev, tc) => self.make_block(round, qc, prev, tc).await,
+                    ProposerMessage::Make(round, qc, tc) => self.make_block(round, qc, tc).await,
                     ProposerMessage::Cleanup(digests) => {
                         for x in &digests {
                             self.buffer.remove(x);

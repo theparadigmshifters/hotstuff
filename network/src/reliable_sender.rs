@@ -141,6 +141,7 @@ impl Connection {
         let mut delay = self.retry_delay;
         let mut retry = 0;
         loop {
+            info!("Connection run:{:?}", self.address);
             match TcpStream::connect(self.address).await {
                 Ok(stream) => {
                     info!("Outgoing connection established with {}", self.address);

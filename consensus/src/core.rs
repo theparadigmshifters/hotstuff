@@ -136,11 +136,6 @@ impl Core {
        
     }
 
-    pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
-        let block = self.get_block(prev_block_hash).await;
-        block.txns_hash_tail(block.prev.clone())
-    }
-
     fn increase_last_voted_round(&mut self, target: Round) {
         self.last_voted_round = max(self.last_voted_round, target);
     }
@@ -205,7 +200,7 @@ impl Core {
                 let vd:[GoldilocksField; 68] = vd.into();
                 let sync_block = SyncStoreBlock {
                     proof: p.to_vec(),
-                    last: block.prev.to_field(),
+                    last: block.qc.last.to_field(),
                     consensus: vd.to_vec(),
                     meta: [GoldilocksField(0); 4],
                     transactions: block.payload.clone(),
@@ -352,13 +347,8 @@ impl Core {
 
     #[async_recursion]
     async fn generate_proposal(&mut self, tc: Option<TC>) {
-        info!("generate_proposal:{:?}", self.high_qc.round);
-        let mut prev = Digest::default();
-        if self.high_qc != QC::genesis() {
-            prev = self.get_txns_hash_tail(self.high_qc.clone().hash).await;
-        } 
         self.tx_proposer
-            .send(ProposerMessage::Make(self.round, self.high_qc.clone(), prev, tc))
+            .send(ProposerMessage::Make(self.round, self.high_qc.clone(), tc))
             .await
             .expect("Failed to send message to proposer");
     }
@@ -450,13 +440,6 @@ impl Core {
                 round: block.round
             }
         );
-        if block.qc != QC::genesis() {
-            info!("handle_proposal block.prev:{:?}, hash_tail:{:?}", block.prev, self.get_txns_hash_tail(block.qc.clone().hash).await);
-            ensure!( 
-                block.prev == self.get_txns_hash_tail(block.qc.clone().hash).await,
-                ConsensusError::InvalidPrev
-            );
-        }
 
         // Check the block is correctly formed.
         block.verify(&self.committee)?;

@@ -6,6 +6,7 @@ use crypto::Digest;
 use crypto::{PublicKey, Transaction};
 #[cfg(feature = "benchmark")]
 use ed25519_dalek::{Digest as _, Sha512};
+use log::info;
 #[cfg(feature = "benchmark")]
 use log::info;
 use network::ReliableSender;
@@ -138,6 +139,7 @@ impl BatchMaker {
 
         // Broadcast the batch through the network.
         let (names, addresses): (Vec<_>, _) = self.mempool_addresses.iter().cloned().unzip();
+        info!("mempool_addresses address:{:?}", addresses);
         let bytes = Bytes::from(serialized.clone());
         let handlers = self.network.broadcast(addresses, bytes).await;
 

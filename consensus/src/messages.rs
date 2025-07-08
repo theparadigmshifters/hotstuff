@@ -13,7 +13,6 @@ use std::iter::once;
 use placeholder_project_name_placeholder_zk::hash::poseidon::PoseidonHash;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::plonk::proof::ProofWithPublicInputs;
-use crypto::Transaction;
 use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -22,7 +21,6 @@ pub struct Block {
     pub tc: Option<TC>,
     pub author: PublicKey,
     pub round: Round,
-    pub prev: Digest,
     pub payload: Vec<Digest>,
     pub signature: Signature,
 }
@@ -33,7 +31,6 @@ impl Block {
         tc: Option<TC>,
         author: PublicKey,
         round: Round,
-        prev: Digest,
         payload: Vec<Digest>,
         mut signature_service: SignatureService,
     ) -> Self {
@@ -42,7 +39,6 @@ impl Block {
             tc,
             author,
             round,
-            prev,
             payload,
             signature: Signature::default(),
         };
@@ -56,7 +52,6 @@ impl Block {
             tc: Some(TC::default()),
             author: PublicKey::default(),
             round: 0,
-            prev: Digest::default(),
             payload: Vec::new(),
             signature: Signature::default(),
         }
@@ -99,16 +94,9 @@ impl Block {
         Digest::from_field(PoseidonHash::hash_pad(&fields).elements)
     }
 
-    pub fn prev(&self) -> Digest {
-        self.prev.clone()
-    }
-
-    pub fn txns_hash_tail(&self, prev: Digest) -> Digest {
-        if self.payload.len() > 0 {
-            let hash = self.payload.iter().fold(prev.to_field().into(), |x, y| PoseidonHash::two_to_one(x, y.to_field().into()));
-            return Digest::from_field(hash.elements)
-        }
-        prev
+    pub fn txns_hash_tail(&self) -> Digest {
+        let hash = self.payload.iter().fold(self.qc.last.to_field().into(), |x, y| PoseidonHash::two_to_one(x, y.to_field().into()));
+        Digest::from_field(hash.elements)
     }
 }
 
@@ -116,9 +104,8 @@ impl Hash for Block {
     fn digest(&self) -> Digest {
         let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0), GoldilocksField(0)].into();
         let h1= PoseidonHash::two_to_one(self.author.to_field().into(), round_hash);
-        let h2 = PoseidonHash::two_to_one(self.prev.to_field().into(), self.txns_hash().to_field().into());
-        let h3 = PoseidonHash::two_to_one(h1, h2);
-        let h4 = PoseidonHash::two_to_one(h3, self.qc.hash.to_field().into());
+        let h2 = PoseidonHash::two_to_one(h1, self.txns_hash().to_field().into());
+        let h4 = PoseidonHash::two_to_one(h2, self.qc.hash.to_field().into());
         Digest::from_field(h4.elements)
     }
 }
@@ -147,6 +134,7 @@ impl fmt::Display for Block {
 pub struct Vote {
     pub hash: Digest,
     pub round: Round,
+    pub last: Digest,
     pub author: PublicKey,
     pub signature: Signature,
 }
@@ -160,6 +148,7 @@ impl Vote {
         let vote = Self {
             hash: block.digest(),
             round: block.round,
+            last: block.txns_hash_tail(),
             author,
             signature: Signature::default(),
         };
@@ -184,7 +173,8 @@ impl Hash for Vote {
     fn digest(&self) -> Digest {
         let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0),GoldilocksField(0)].into();
         let h = PoseidonHash::two_to_one(self.hash.to_field().into(), round_hash);
-        Digest::from_field(h.elements)
+        let h1 = PoseidonHash::two_to_one(h, self.last.to_field().into());
+        Digest::from_field(h1.elements)
     }
 }
 
@@ -198,6 +188,7 @@ impl fmt::Debug for Vote {
 pub struct QC {
     pub hash: Digest,
     pub round: Round,
+    pub last: Digest,
     pub votes: Vec<(PublicKey, Signature)>,
 }
 
@@ -240,7 +231,7 @@ impl QC {
         let block_target = BlockTarget::new(
             block.author.to_field().into(),
             block.qc.hash.to_field().into(),
-            block.prev().to_field().into(),
+            block.qc.last.to_field().into(),
             [
                 GoldilocksField::from_canonical_u64(block.round),
                 GoldilocksField(0),
@@ -252,7 +243,7 @@ impl QC {
         let verifier_data = circuit_data.verifier_data().clone();
         let proof = recursion_prove(circuit_data, targets, proof_targets, proofs, block_target).await.unwrap();
         let (verifier_data, proof) = convert_to_placeholder_proof(&verifier_data, proof).await;
-        verifier_data.verify(ProofWithPublicInputs{ proof: proof.into(), public_inputs: [block.prev.to_field(), block.txns_hash().to_field(), [GoldilocksField(0); 4], [GoldilocksField(0); 4]].concat()}).unwrap();
+        verifier_data.verify(ProofWithPublicInputs{ proof: proof.into(), public_inputs: [block.qc.last.to_field(), block.txns_hash().to_field(), [GoldilocksField(0); 4], [GoldilocksField(0); 4]].concat()}).unwrap();
         (PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData::try_from(verifier_data.verifier_only).expect("Failed to palcehoder!"), proof)
     }
 }
@@ -261,7 +252,8 @@ impl Hash for QC {
     fn digest(&self) -> Digest {
         let round_hash = [GoldilocksField::from_canonical_u64(self.round), GoldilocksField(0), GoldilocksField(0),GoldilocksField(0)].into();
         let h = PoseidonHash::two_to_one(self.hash.to_field().into(), round_hash);
-        Digest::from_field(h.elements)
+        let h1 = PoseidonHash::two_to_one(h, self.last.to_field().into());
+        Digest::from_field(h1.elements)
     }
 }
 

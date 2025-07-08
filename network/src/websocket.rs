@@ -44,14 +44,14 @@ pub trait RequestHandler: Clone + Copy + Send + Sync + 'static {
 }
 
 pub struct WebSocketServer<Handler: RequestHandler> {
-    address: String,
+    address: SocketAddr,
     handler: Handler,
     peers: PeerMap,
     block_rx: Receiver<String>,
 }
 
 impl<Handler: RequestHandler> WebSocketServer<Handler> {
-    pub fn new(address: String, handler: Handler, block_rx: Receiver<String>) -> Self {
+    pub fn new(address: SocketAddr, handler: Handler, block_rx: Receiver<String>) -> Self {
         info!("new websocketserver");
         let peers = PeerMap::new(RwLock::new(HashMap::new()));
         Self { address, handler, peers, block_rx}
@@ -124,9 +124,7 @@ impl<Handler: RequestHandler> WebSocketServer<Handler> {
             .map_err(|e| {
                 error!("WebSocket handshake failed for {}: {}", addr, e);
                 e
-            })
-            .unwrap_or_else(|_| panic!("Failed to accept WebSocket connection"));
-
+            }).expect("");
         let (tx, rx) = unbounded();
         peers.write().unwrap().insert(addr, (tx.clone(), Instant::now()));
 
@@ -201,7 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .target(env_logger::Target::Stdout)
         .init();       info!("test main");
     let (block_tx, block_rx) = channel(CHANNEL_CAPACITY);
-    let mut server = WebSocketServer::new("127.0.0.1:8080".to_string(), DummyHandler, block_rx);
+    let mut server = WebSocketServer::new(format!("127.0.0.1:8080").parse().unwrap(), DummyHandler, block_rx);
     let server_handle = tokio::spawn(async move { server.run().await.unwrap() });
     tokio::time::sleep(Duration::from_millis(500)).await;
     loop  {
@@ -214,18 +212,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_server_connection() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:8080";
+    let addr = format!("127.0.0.1:8080").parse().unwrap();
     let server = tokio::spawn(async move {
         let (block_tx, block_rx) = channel(CHANNEL_CAPACITY);
         block_tx.send("12312".to_string());
-        let mut server = WebSocketServer::new(addr.to_string(), DummyHandler, block_rx);
+        let mut server = WebSocketServer::new(addr, DummyHandler, block_rx);
         server.run().await.unwrap();
     });
 
     tokio::time::sleep(Duration::from_millis(100)).await; // 等待服务器启动
 
     // 模拟客户端连接
-    let (mut ws_stream, _) = tokio_tungstenite::connect_async(addr).await?;
+    let (mut ws_stream, _) = tokio_tungstenite::connect_async(addr.to_string()).await?;
     ws_stream
         .send(Message::Text(r#"{"type": "transaction", "id": "tx1", "amount": 100.0, "recipient": "user1"}"#.to_string().into()))
         .await?;

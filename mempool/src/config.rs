@@ -55,6 +55,7 @@ pub struct Authority {
     pub transactions_address: SocketAddr,
     /// Address to receive messages from other nodes.
     pub mempool_address: SocketAddr,
+    pub ws_address: SocketAddr,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -64,15 +65,16 @@ pub struct Committee {
 }
 
 impl Committee {
-    pub fn new(info: Vec<(PublicKey, Stake, SocketAddr, SocketAddr)>, epoch: EpochNumber) -> Self {
+    pub fn new(info: Vec<(PublicKey, Stake, SocketAddr, SocketAddr, SocketAddr)>, epoch: EpochNumber) -> Self {
         Self {
             authorities: info
                 .into_iter()
-                .map(|(name, stake, transactions_address, mempool_address)| {
+                .map(|(name, stake, transactions_address, mempool_address, ws_address)| {
                     let authority = Authority {
                         stake,
                         transactions_address,
                         mempool_address,
+                        ws_address,
                     };
                     (name, authority)
                 })
@@ -102,6 +104,10 @@ impl Committee {
     /// Returns the mempool addresses of a specific node.
     pub fn mempool_address(&self, name: &PublicKey) -> Option<SocketAddr> {
         self.authorities.get(name).map(|x| x.mempool_address)
+    }
+
+    pub fn ws_address(&self, name: &PublicKey) ->Option<SocketAddr> {
+        self.authorities.get(name).map(|x| x.ws_address)
     }
 
     /// Returns the mempool addresses of all nodes except `myself`.

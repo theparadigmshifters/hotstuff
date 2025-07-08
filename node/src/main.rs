@@ -117,7 +117,8 @@ fn deploy_testbed(nodes: u16) -> Result<Vec<JoinHandle<()>>, Box<dyn std::error:
                 let stake = 1;
                 let front = format!("127.0.0.1:{}", 25_000 + i).parse().unwrap();
                 let mempool = format!("127.0.0.1:{}", 25_100 + i).parse().unwrap();
-                (name, stake, front, mempool)
+                let ws = format!("127.0.0.1:{}", 25_200 + i).parse().unwrap();
+                (name, stake, front, mempool, ws)
             })
             .collect(),
         epoch,
@@ -131,7 +132,7 @@ fn deploy_testbed(nodes: u16) -> Result<Vec<JoinHandle<()>>, Box<dyn std::error:
                 let (circuit_data, _, _) =  generate_circuit(PoseidonHash::hash_no_pad(&secret.to_field()));
                 let vd = circuit_data.verifier_data().to_bytes(&DefaultGateSerializer).unwrap();
                 let stake = 1;
-                let addresses = format!("127.0.0.1:{}", 25_200 + i).parse().unwrap();
+                let addresses = format!("127.0.0.1:{}", 25_300 + i).parse().unwrap();
                 (name, stake, vd, addresses)
             }).collect(),
         epoch,

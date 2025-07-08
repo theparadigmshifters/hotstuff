@@ -9,7 +9,7 @@ use bytes::Bytes;
 use crypto::{Digest, PublicKey, Transaction};
 use futures::sink::SinkExt as _;
 use log::{info, warn};
-use network::{MessageHandler, Receiver as NetworkReceiver, Writer, RequestHandler};
+use network::{MessageHandler, Receiver as NetworkReceiver, Writer, RequestHandler, WebSocketServer};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
@@ -76,7 +76,7 @@ impl Mempool {
         mempool.handle_consensus_messages(rx_consensus);
         mempool.handle_clients_transactions();
         mempool.handle_mempool_messages();
-
+        mempool.handle_client_request_message(rx_block_to_client);
         info!(
             "Mempool successfully booted on {}",
             mempool
@@ -85,6 +85,12 @@ impl Mempool {
                 .expect("Our public key is not in the committee")
                 .ip()
         );
+    }
+
+    fn handle_client_request_message(&self, rx_block_to_client: Receiver<String>) {
+        let ws_address = self.committee.ws_address(&self.name).unwrap();
+        let mut ws = WebSocketServer::new(ws_address, ClientRequestHandler{}, rx_block_to_client);
+        tokio::spawn(async move { ws.run().await.unwrap() });
     }
 
     /// Spawn all tasks responsible to handle messages from the consensus.
