@@ -26,6 +26,7 @@ impl Node {
         let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
         let (tx_consensus_to_mempool, rx_consensus_to_mempool) = channel(CHANNEL_CAPACITY);
         let (tx_mempool_to_consensus, rx_mempool_to_consensus) = channel(CHANNEL_CAPACITY);
+        let (tx_block_to_client, rx_block_to_client) = channel(CHANNEL_CAPACITY);
 
         // Read the committee and secret key from file.
         let committee = Committee::read(committee_file)?;
@@ -54,6 +55,7 @@ impl Node {
             store.clone(),
             rx_consensus_to_mempool,
             tx_mempool_to_consensus,
+            rx_block_to_client,
         );
 
         // Run the consensus core.
@@ -66,6 +68,7 @@ impl Node {
             rx_mempool_to_consensus,
             tx_consensus_to_mempool,
             tx_commit,
+            tx_block_to_client,
         );
 
         info!("Node {} successfully booted", name);

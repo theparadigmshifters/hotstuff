@@ -58,6 +58,7 @@ impl Mempool {
         store: Store,
         rx_consensus: Receiver<ConsensusMempoolMessage>,
         tx_consensus: Sender<Digest>,
+        rx_block_to_client: Receiver<String>,
     ) {
         // NOTE: This log entry is used to compute performance.
         parameters.log();
@@ -185,6 +186,20 @@ impl Mempool {
         );
 
         info!("Mempool listening to mempool messages on {}", address);
+    }
+}
+
+#[derive(Clone)]
+struct ClientRequestHangler {
+
+}
+
+impl RequestHandler for ClientRequestHangler {
+    async fn process_txn(&self, txn: String) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+    async fn get_block(&self, block_hash: String) -> Result<Block, Box<dyn std::error::Error>> {
+        Ok(())
     }
 }
 

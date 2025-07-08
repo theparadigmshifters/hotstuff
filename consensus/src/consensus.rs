@@ -51,6 +51,7 @@ impl Consensus {
         rx_mempool: Receiver<Digest>,
         tx_mempool: Sender<ConsensusMempoolMessage>,
         tx_commit: Sender<Block>,
+        tx_block: Sender<String>,
     ) {
         // NOTE: This log entry is used to compute performance.
         parameters.log();
@@ -107,6 +108,7 @@ impl Consensus {
             rx_loopback,
             tx_proposer,
             tx_commit,
+            tx_block,
         );
 
         // Spawn the block proposer.

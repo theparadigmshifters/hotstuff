@@ -41,6 +41,7 @@ pub struct Core {
     rx_loopback: Receiver<Block>,
     tx_proposer: Sender<ProposerMessage>,
     tx_commit: Sender<Block>,
+    tx_block: Sender<String>,
     round: Round,
     last_voted_round: Round,
     last_committed_round: Round,
@@ -65,6 +66,7 @@ impl Core {
         rx_loopback: Receiver<Block>,
         tx_proposer: Sender<ProposerMessage>,
         tx_commit: Sender<Block>,
+        tx_block: Sender<String>,
     ) {
         tokio::spawn(async move {
             Self {
@@ -79,6 +81,7 @@ impl Core {
                 rx_loopback,
                 tx_proposer,
                 tx_commit,
+                tx_block,
                 round: 1,
                 last_voted_round: 0,
                 last_committed_round: 0,
@@ -215,6 +218,9 @@ impl Core {
                     transactions: block.payload.clone(),
                 };
                 self.store_sync_block(&sync_block).await;
+                if let Err(e) = self.tx_block.send(block).await {
+                    warn!("Failed to send block through the commit channel: {}", e);
+                }
             }
 
             for v in &block.payload {
