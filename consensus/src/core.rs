@@ -1,10 +1,10 @@
 use crate::aggregator::Aggregator;
 use crate::config::Committee;
-use crate::consensus::{ConsensusMessage, Round};
+use crate::consensus::{self, ConsensusMessage, Round};
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::leader::LeaderElector;
 use crate::mempool::MempoolDriver;
-use crate::messages::{Block, SyncBlock, Timeout, Vote, QC, TC};
+use crate::messages::{Block, SyncStoreBlock, Timeout, Vote, QC, TC};
 use crate::proposer::ProposerMessage;
 use crate::synchronizer::Synchronizer;
 use crate::timer::Timer;
@@ -15,11 +15,19 @@ use crypto::{PublicKey, SignatureService};
 use log::{debug, error, info, warn};
 use network::SimpleSender;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
+use placeholder_project_name_placeholder_zk::fri::proof;
 use std::cmp::max;
 use std::collections::VecDeque;
+use std::convert::{TryFrom, TryInto};
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
 use crypto::Digest;
+use l0::Block as L0Block;
+use l0::Transaction as L0Transaction;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderProof;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderHash;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderField;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
 
 pub struct Core {
     name: PublicKey,
@@ -101,15 +109,35 @@ impl Core {
         self.store.write(key.clone(), value).await;
     }
 
-    async fn store_sync_block(&mut self, block: &SyncBlock) {
+    async fn store_sync_block(&mut self, block: &SyncStoreBlock) {
         let key = Digest::from_field(block.last).to_vec();
         let value = bincode::serialize(block).expect("Failed to serialize sync block");
         self.store.write(key.clone(), value).await;
     }
 
-    async fn get_sync_block(&mut self, last: Digest) -> SyncBlock {
+    async fn get_sync_block(&mut self, last: Digest) -> Vec<GoldilocksField> {
         let block_bytes = self.store.read(last.to_vec()).await.expect("Failed to get sync block by hash");
-        bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block")
+        let block: SyncStoreBlock = bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block");
+        let txns = Vec::new();
+        for txn_hash in block.transactions {
+            let txn = self.get_txn(txn_hash).await;
+          
+            txns.push(txn);
+        }
+        let proof_array: [GoldilocksField; 16581] = block.proof.try_into().expect("Proof vector has incorrect length");
+        let proof: PlaceholderProjectNamePlaceholderProof = proof_array.into();
+        let last: PlaceholderProjectNamePlaceholderHash = block.last.into();
+        let consensus_arry: [GoldilocksField; 68] = block.consensus.try_into().expect("Consensus vector has incorrect length");
+        let consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = consensus_arry.into();
+        let meta: PlaceholderProjectNamePlaceholderHash = block.meta.into();
+        let l0_block = L0Block {
+            proof,
+            last,
+            consensus,
+            meta,
+            transactions: txns,
+        };
+        l0_block.into()
     }
 
     pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
@@ -177,20 +205,14 @@ impl Core {
                 let prev_block = self.get_block(block.clone().qc.hash).await;
                 let (vd, proof) = block.qc.generate_recursion_prove(&self.committee, &prev_block).await;
                 
-                let payload = block.payload.clone();
-                let mut txns = Vec::with_capacity(payload.len());
-                for v in payload {
-                    txns.push(self.get_txn(v).await);
-                }
-                
                 let p: [GoldilocksField; 16581] = proof.into();
                 let vd:[GoldilocksField; 68] = vd.into();
-                let sync_block = SyncBlock {
+                let sync_block = SyncStoreBlock {
                     proof: p.to_vec(),
                     last: block.prev.to_field(),
                     consensus: vd.to_vec(),
                     meta: [GoldilocksField(0); 4],
-                    transactions: txns,
+                    transactions: block.payload.clone(),
                 };
                 self.store_sync_block(&sync_block).await;
             }

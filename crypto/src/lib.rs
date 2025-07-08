@@ -34,8 +34,14 @@ use placeholder_project_name_placeholder_zk::{
         witness::{PartialWitness, WitnessWrite},
     }
 };
-
+use l0::Transaction as L0Transaction;
 pub type CryptoError = ed25519::Error;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderProof;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderHash;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderField;
+use placeholder_project_name_placeholder_zk::placeholder_project_name_placeholder_patch::PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData;
+
+
 
 /// Represents a hash digest (32 bytes).
 #[derive(Hash, PartialEq, Default, Eq, Clone, Deserialize, Serialize, Ord, PartialOrd)]
@@ -475,14 +481,14 @@ pub async fn convert_to_placeholder_proof(inner_data: &VerifierCircuitData<F, C,
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
-    snap: [GoldilocksField; 4],
-    from: Vec<GoldilocksField>,
-    to: [GoldilocksField; 4],
-    amount: GoldilocksField,
-    nonce: GoldilocksField,
-    price: GoldilocksField,
-    payload: Vec<[GoldilocksField; 8]>,
-    proof: Vec<GoldilocksField>,
+    pub snap: [GoldilocksField; 4],
+    pub from: Vec<GoldilocksField>,
+    pub to: [GoldilocksField; 4],
+    pub amount: GoldilocksField,
+    pub nonce: GoldilocksField,
+    pub gas: GoldilocksField,
+    pub payload: Vec<GoldilocksField>,
+    pub proof: Vec<GoldilocksField>,
 }
 
 impl Transaction {
@@ -494,22 +500,19 @@ impl Transaction {
             to: [GoldilocksField(0); 4],
             amount: GoldilocksField(0),
             nonce: GoldilocksField(r),
-            price: GoldilocksField(0),
-            payload: [[GoldilocksField(0); 8]].to_vec(),
+            gas: GoldilocksField(0),
+            payload: [GoldilocksField(0)].to_vec(),
             proof: [GoldilocksField(0); 16581].to_vec(), 
         }
     }
      pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
-        let info = [self.amount, self.nonce, self.price, GoldilocksField(self.payload.len() as u64)];
+        let info = [self.amount, self.nonce, self.gas, GoldilocksField(self.payload.len() as u64)];
         let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
         let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
         [self.snap, self.get_from_addr().elements, self.to, info_hash]
     }
     pub fn hash(&self) -> [GoldilocksField; 4] { PoseidonHash::hash_no_pad(&self.public_inputs().concat()).elements }
     pub fn verify_proof(&self) { VerifierCircuitData::from(self.get_from()).verify(ProofWithPublicInputs { proof: self.get_proof().into(), public_inputs: self.public_inputs().concat() }).unwrap() }
-    pub fn to_byte(&self) {
-        
-    }
     pub fn get_proof(&self) -> PlaceholderProjectNamePlaceholderProof {
         let arr: [GoldilocksField; 16581] = self.proof.clone().try_into().expect("proof must have length 16581");
         PlaceholderProjectNamePlaceholderProof::from(arr)
@@ -520,6 +523,32 @@ impl Transaction {
     }
     pub fn get_from_addr(&self) -> HashOut<GoldilocksField> {
          HashOut::from(self.get_from())
+    }
+    pub fn to_l0_txn(&self) -> L0Transaction {
+        let proof_array: [GoldilocksField; 16581] = self.proof.clone().try_into().expect("Proof vector has incorrect length");
+        let proof: PlaceholderProjectNamePlaceholderProof = proof_array.into();     
+        let snap: PlaceholderProjectNamePlaceholderHash = self.snap.into();
+        let from_arry: [GoldilocksField; 68] = self.from.clone().try_into().expect("Consensus vector has incorrect length");
+        let from: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = from_arry.into();
+        let to: PlaceholderProjectNamePlaceholderHash = self.to.into();
+        let nonce: PlaceholderProjectNamePlaceholderField = self.nonce.into();
+        let amount: PlaceholderProjectNamePlaceholderField = self.amount.into();
+        let gas: PlaceholderProjectNamePlaceholderField = self.gas.into();
+        let payload: Vec<PlaceholderProjectNamePlaceholderField> = self
+            .payload
+            .iter()
+            .map(|arr| PlaceholderProjectNamePlaceholderField::from(*arr))
+            .collect();
+        L0Transaction{
+            proof,
+            snap,
+            from,
+            to,
+            nonce,
+            amount,
+            gas,
+            payload 
+        }
     }
 }
 

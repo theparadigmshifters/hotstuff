@@ -391,10 +391,10 @@ impl fmt::Debug for TC {
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
-pub struct SyncBlock {
+pub struct SyncStoreBlock {
     pub proof: Vec<GoldilocksField>,
     pub last: [GoldilocksField; 4],
     pub consensus:  Vec<GoldilocksField>,
     pub meta: [GoldilocksField; 4],
-    pub transactions: Vec<Transaction>,
+    pub transactions: Vec<Digest>,
 }

@@ -24,6 +24,7 @@ network = { path = "../network" }
 mempool = { path = "../mempool" }
 placeholder_project_name_placeholder_zk = { path = "../../monorepo/zk/plonky2" }
 env_logger = "0.11.8"
+l0 = { path = "../../monorepo/l0" }
 
 [dev-dependencies]
 tokio-util = { version = "0.7.3", features= ["codec"] }
