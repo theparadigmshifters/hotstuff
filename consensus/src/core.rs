@@ -16,6 +16,7 @@ use log::{debug, error, info, warn};
 use network::SimpleSender;
 use placeholder_project_name_placeholder_zk::field::goldilocks_field::GoldilocksField;
 use placeholder_project_name_placeholder_zk::fri::proof;
+use core::sync;
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::convert::{TryFrom, TryInto};
@@ -118,13 +119,12 @@ impl Core {
         self.store.write(key.clone(), value).await;
     }
 
-    async fn get_sync_block(&mut self, last: Digest) -> Vec<GoldilocksField> {
+    async fn get_sync_block(&mut self, last: Digest) {
         let block_bytes = self.store.read(last.to_vec()).await.expect("Failed to get sync block by hash");
         let block: SyncStoreBlock = bincode::deserialize(&block_bytes.unwrap()).expect("Failed to derialize block");
-        let txns = Vec::new();
+        let mut txns = Vec::new();
         for txn_hash in block.transactions {
             let txn = self.get_txn(txn_hash).await;
-          
             txns.push(txn);
         }
         let proof_array: [GoldilocksField; 16581] = block.proof.try_into().expect("Proof vector has incorrect length");
@@ -133,14 +133,7 @@ impl Core {
         let consensus_arry: [GoldilocksField; 68] = block.consensus.try_into().expect("Consensus vector has incorrect length");
         let consensus: PlaceholderProjectNamePlaceholderVerifierOnlyCircuitData = consensus_arry.into();
         let meta: PlaceholderProjectNamePlaceholderHash = block.meta.into();
-        let l0_block = L0Block {
-            proof,
-            last,
-            consensus,
-            meta,
-            transactions: txns,
-        };
-        l0_block.into()
+       
     }
 
     pub async fn get_txns_hash_tail(&mut self, prev_block_hash: Digest) -> Digest {
@@ -218,7 +211,7 @@ impl Core {
                     transactions: block.payload.clone(),
                 };
                 self.store_sync_block(&sync_block).await;
-                if let Err(e) = self.tx_block.send(block).await {
+                if let Err(e) = self.tx_block.send(Digest::from_field(sync_block.last).to_string()).await {
                     warn!("Failed to send block through the commit channel: {}", e);
                 }
             }

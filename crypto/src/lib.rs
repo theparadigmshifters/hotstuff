@@ -505,7 +505,7 @@ impl Transaction {
     }
      pub fn public_inputs(&self) -> [[GoldilocksField; 4]; 4] {
         let info = [self.amount, self.nonce, self.gas, GoldilocksField(self.payload.len() as u64)];
-        let payload_tail = self.payload.iter().fold([GoldilocksField(0); 4], |x, y| PoseidonHash::two_to_one(x.into(), PoseidonHash::hash_no_pad(y)).elements);
+        let payload_tail = PoseidonHash::hash_no_pad(&self.payload);
         let info_hash = PoseidonHash::two_to_one(info.into(), payload_tail.into()).elements;
         [self.snap, self.get_from_addr().elements, self.to, info_hash]
     }

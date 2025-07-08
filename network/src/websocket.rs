@@ -7,6 +7,7 @@ use std::{
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
 use futures_util::{future, pin_mut, stream::TryStreamExt, SinkExt, StreamExt};
+use serde::Serialize;
 use serde_json::Value;
 use tokio::{net::{TcpListener, TcpStream}, time::Sleep};
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -37,19 +38,19 @@ struct Block {
 
 // 消息处理 trait
 #[async_trait::async_trait]
-pub trait MessageHandler: Clone + Copy + Send + Sync + 'static {
+pub trait RequestHandler: Clone + Copy + Send + Sync + 'static {
     async fn process_txn(&self, txn: String) -> Result<(), Box<dyn std::error::Error>>;
-    async fn get_block(&self, block_hash: String) -> Result<Block, Box<dyn std::error::Error>>;
+    async fn get_block(&self, block_hash: String) -> Result<String, Box<dyn std::error::Error>>;
 }
 
-pub struct WebSocketServer<Handler: MessageHandler> {
+pub struct WebSocketServer<Handler: RequestHandler> {
     address: String,
     handler: Handler,
     peers: PeerMap,
     block_rx: Receiver<String>,
 }
 
-impl<Handler: MessageHandler> WebSocketServer<Handler> {
+impl<Handler: RequestHandler> WebSocketServer<Handler> {
     pub fn new(address: String, handler: Handler, block_rx: Receiver<String>) -> Self {
         info!("new websocketserver");
         let peers = PeerMap::new(RwLock::new(HashMap::new()));
@@ -181,23 +182,15 @@ impl<Handler: MessageHandler> WebSocketServer<Handler> {
 pub struct DummyHandler;
 
 #[async_trait::async_trait]
-impl MessageHandler for DummyHandler {
+impl RequestHandler for DummyHandler {
     async fn process_txn(&self, txn: String) -> Result<(), Box<dyn std::error::Error>> {
         info!("Processed transaction: {:?}", txn);
         Ok(())
     }
 
-    async fn get_block(&self, block_hash: String) -> Result<Block, Box<dyn std::error::Error>> {
+    async fn get_block(&self, block_hash: String) -> Result<String, Box<dyn std::error::Error>> {
         // 模拟返回区块内容
-        Ok(Block {
-            hash: block_hash,
-            transactions: vec![Transaction {
-                id: "tx1".to_string(),
-                amount: 100.0,
-                recipient: "user1".to_string(),
-            }],
-            timestamp: 1625097600,
-        })
+        Ok("1213".to_string())
     }
 }
 

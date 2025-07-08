@@ -9,7 +9,7 @@ use bytes::Bytes;
 use crypto::{Digest, PublicKey, Transaction};
 use futures::sink::SinkExt as _;
 use log::{info, warn};
-use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
+use network::{MessageHandler, Receiver as NetworkReceiver, Writer, RequestHandler};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
@@ -189,17 +189,18 @@ impl Mempool {
     }
 }
 
-#[derive(Clone)]
-struct ClientRequestHangler {
+#[derive(Clone, Copy)]
+struct ClientRequestHandler {
 
 }
 
-impl RequestHandler for ClientRequestHangler {
+#[async_trait]
+impl RequestHandler for ClientRequestHandler {
     async fn process_txn(&self, txn: String) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
-    async fn get_block(&self, block_hash: String) -> Result<Block, Box<dyn std::error::Error>> {
-        Ok(())
+    async fn get_block(&self, block_hash: String) -> Result<String, Box<dyn std::error::Error>> {
+        Ok("".to_string())
     }
 }
 
