@@ -84,7 +84,7 @@ impl Mempool {
         store: Store,
         rx_consensus: Receiver<ConsensusMempoolMessage>,
         tx_consensus: Sender<Digest>,
-    ) {
+    ) -> Sender<SerializedTransaction> {
         // NOTE: This log entry is used to compute performance.
         parameters.log();
 
@@ -99,7 +99,7 @@ impl Mempool {
 
         // Spawn all mempool tasks.
         mempool.handle_consensus_messages(rx_consensus);
-        mempool.handle_clients_transactions();
+        let tx_transaction_broadcaster = mempool.handle_clients_transactions();
         mempool.handle_mempool_messages();
 
         info!(
@@ -110,6 +110,8 @@ impl Mempool {
                 .expect("Our public key is not in the committee")
                 .ip()
         );
+        
+        tx_transaction_broadcaster
     }
 
     /// Spawn all tasks responsible to handle messages from the consensus.
@@ -128,7 +130,7 @@ impl Mempool {
     }
 
     /// Spawn all tasks responsible to handle clients transactions.
-    fn handle_clients_transactions(&self) {
+    fn handle_clients_transactions(&self) -> Sender<SerializedTransaction> {
         let (tx_transaction_broadcaster, rx_transaction_broadcaster) = channel(CHANNEL_CAPACITY);
         let (tx_quorum_waiter, rx_quorum_waiter) = channel(CHANNEL_CAPACITY);
         let (tx_processor, rx_processor) = channel(CHANNEL_CAPACITY);
@@ -141,7 +143,7 @@ impl Mempool {
         address.set_ip("0.0.0.0".parse().unwrap());
         NetworkReceiver::spawn(
             address,
-            /* handler */ TxReceiverHandler { tx_transaction_broadcaster },
+            /* handler */ TxReceiverHandler { tx_transaction_broadcaster: tx_transaction_broadcaster.clone() },
         );
 
         // The transactions are sent to the `BatchMaker` that assembles them into batches. It then broadcasts
@@ -171,6 +173,8 @@ impl Mempool {
         );
 
         info!("Mempool listening to client transactions on {}", address);
+        
+        tx_transaction_broadcaster
     }
 
     /// Spawn all tasks responsible to handle messages from other mempools.

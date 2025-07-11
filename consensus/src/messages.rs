@@ -109,7 +109,7 @@ impl Block {
         Ok(())
     }
 
-    pub fn aggregated_block(&self, parent: Block, committee: &Committee, transactions:Vec<Transaction>) -> SyncBlock {
+    pub fn aggregated_block(&self, parent: Block, committee: &Committee, transactions:Vec<Transaction>) -> (SyncBlock, PlaceholderProjectNamePlaceholderHash, usize) {
         let vds = self.qc.votes
             .iter()
             .map(|v| {
@@ -149,9 +149,12 @@ impl Block {
         public_inputs.extend_from_slice(&HashOut::<GoldilocksField>::from(meta).elements);
         trans_circuit.vd().verify(ProofWithPublicInputs {proof: trans_proof.clone(), public_inputs}).expect("aggregated proof verification failed");
         let l0_proof = PlaceholderProjectNamePlaceholderProof::try_from(trans_proof.clone()).unwrap();
-        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(last_tail), meta, consensus, transactions, proof: l0_proof};
+        let l0_block = l0::Block{last: PlaceholderProjectNamePlaceholderHash::from(last_tail), meta, consensus, transactions, proof: l0_proof.clone()};
         debug!("Aggregated block, last: {:?}, tx_num: {}", l0_block.last, l0_block.transactions.len());
-        SyncBlock(l0_block.try_into().unwrap())
+        let last_hash = l0_block.last;
+        let tx_count = l0_block.transactions.len();
+        let sync_block = SyncBlock(l0_block.try_into().unwrap());
+        (sync_block, last_hash, tx_count)
     }
 }
 
@@ -407,4 +410,9 @@ fn verify_proof(digest: &Digest, author: &Digest, committee: &Committee, proof: 
     let vd_decoded = general_purpose::STANDARD.decode(&vd_encoded).unwrap();
     let vd = VerifierCircuitData::from_bytes(vd_decoded, &DefaultGateSerializer).unwrap();
     vd.verify(ProofWithPublicInputs { proof: proof.into(), public_inputs: digest.to_vec_field() }).expect("proof verification failed");
+}
+
+#[derive(Debug, Clone)]
+pub enum WebSocketEvent {
+    BroadcastChainUpdate { prev_hash: Digest },
 }
