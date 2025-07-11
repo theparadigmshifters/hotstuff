@@ -4,7 +4,7 @@ use crate::consensus::{ConsensusMessage, Round};
 use crate::error::{ConsensusError, ConsensusResult};
 use crate::leader::LeaderElector;
 use crate::mempool::MempoolDriver;
-use crate::messages::{Block, Timeout, Vote, QC, TC};
+use crate::messages::{Block, Timeout, Vote, WebSocketEvent, QC, TC};
 use crate::proposer::ProposerMessage;
 use crate::synchronizer::Synchronizer;
 use crate::timer::Timer;
@@ -34,6 +34,7 @@ pub struct Core {
     rx_loopback: Receiver<Block>,
     tx_proposer: Sender<ProposerMessage>,
     tx_commit: Sender<Block>,
+    tx_websocket_event: Option<Sender<WebSocketEvent>>,
     round: Round,
     last_voted_round: Round,
     last_committed_round: Round,
@@ -58,6 +59,7 @@ impl Core {
         rx_loopback: Receiver<Block>,
         tx_proposer: Sender<ProposerMessage>,
         tx_commit: Sender<Block>,
+        tx_websocket_event: Option<Sender<WebSocketEvent>>,
     ) {
         tokio::spawn(async move {
             Self {
@@ -72,6 +74,7 @@ impl Core {
                 rx_loopback,
                 tx_proposer,
                 tx_commit,
+                tx_websocket_event,
                 round: 1,
                 last_voted_round: 0,
                 last_committed_round: 0,
@@ -163,7 +166,38 @@ impl Core {
                 }
             }
 
-            let sync_block = block.aggregated_block(parent, &self.committee, transactions);
+            let (sync_block, prev_hash, tx_num) = block.aggregated_block(parent, &self.committee, transactions);
+            if let Some(ref tx_ws_event) = self.tx_websocket_event {
+                if tx_num > 0 {
+                    match bincode::serialize(&sync_block) {
+                        Ok(sync_block_bytes) => {
+                            let digest_prev_hash = Digest(prev_hash.clone().into());
+                            let prev_hash_bytes = digest_prev_hash.to_vec();
+                            self.store.write(prev_hash_bytes.clone(), sync_block_bytes).await;
+                            debug!(
+                                "Stored sync_block with prev_hash: {:?}, tx_num: {}",
+                                prev_hash, tx_num
+                            );
+                            let broadcast_event = WebSocketEvent::BroadcastChainUpdate {
+                                prev_hash: Digest(prev_hash.clone().into()),
+                            };
+                            if let Err(e) = tx_ws_event.send(broadcast_event).await {
+                                error!("Failed to send broadcast event to WebSocket: {}", e);
+                            } else {
+                                debug!(
+                                    "Sent broadcast chain update event for prev_hash: {:?}",
+                                    prev_hash
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to serialize sync_block: {}", e);
+                        }
+                    }
+                } else {
+                    debug!("Skipped empty block storage and broadcast (tx_num: 0)");
+                }
+            }
             if let Err(e) = self.tx_commit.send(block).await {
                 warn!("Failed to send block through the commit channel: {}", e);
             }

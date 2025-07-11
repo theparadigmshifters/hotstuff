@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use crate::messages::WebSocketEvent;
 
 /// The default channel capacity for each channel of the consensus.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -71,6 +72,7 @@ impl Consensus {
         rx_mempool: Receiver<Digest>,
         tx_mempool: Sender<ConsensusMempoolMessage>,
         tx_commit: Sender<Block>,
+        tx_websocket_event: Option<Sender<WebSocketEvent>>,
     ) {
         // NOTE: This log entry is used to compute performance.
         parameters.log();
@@ -127,6 +129,7 @@ impl Consensus {
             rx_loopback,
             tx_proposer,
             tx_commit,
+            tx_websocket_event,
         );
 
         // Spawn the block proposer.
